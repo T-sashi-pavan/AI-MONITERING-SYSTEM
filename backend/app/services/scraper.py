@@ -507,204 +507,223 @@ async def _run_interactive_login_inner(service: str) -> Dict[str, Any]:
 
             if is_groq:
                 page.on("response", on_response_captured)
-                
-            async def monitor_groq_session():
-                nonlocal current_state, keys_extracted, usage_extracted, cached_storage_state, extracted_keys, extracted_spend, extracted_logs, limits
-                
-                keys_countdown_started = False
-                usage_countdown_started = False
-                
-                keys_page_logged = False
-                usage_page_logged = False
-                
-                while not browser_closed.is_set():
-                    try:
-                        url = page.url
-                        
-                        # Check for Authentication (run on every tick if not authenticated)
-                        if current_state in ["IDLE", "BROWSER_LAUNCHED"]:
-                            if await check_authenticated():
-                                current_state = "USER_AUTHENTICATED"
-                                await update_scraper_stage(service_lower, current_state, "User Authenticated")
-                                log_colored("OK", "User Authenticated")
-                                # Capture initial cookies/storage state
-                                cached_storage_state = await context.storage_state()
-                        
-                        # Detect page transitions and extractions (only once authenticated)
-                        if current_state not in ["IDLE", "BROWSER_LAUNCHED"]:
-                            if "console.groq.com/keys" in url:
-                                if not keys_page_logged:
-                                    keys_page_logged = True
-                                    log_colored("OK", "User Entered API Keys Page")
-                                    
-                                if not keys_extracted and not keys_countdown_started:
-                                    keys_countdown_started = True
-                                    current_state = "API_KEYS_PAGE_DETECTED"
-                                    await update_scraper_stage(service_lower, current_state, "API Keys Page Detected")
-                                    
-                                    log_colored("COUNTDOWN", "Extracting in 10 seconds...")
-                                    for i in range(9, 0, -1):
-                                        await asyncio.sleep(1)
-                                        log_colored("COUNTDOWN", f"{i}")
-                                    await asyncio.sleep(1)
-                                    
-                                    # Run extraction
-                                    try:
-                                        keys_list = []
-                                        for resp in intercepted_responses:
-                                            if "keys" in resp["url"]:
-                                                keys_data = resp["data"]
-                                                k_list = []
-                                                if isinstance(keys_data, list):
-                                                    k_list = keys_data
-                                                elif isinstance(keys_data, dict):
-                                                    k_list = keys_data.get("keys") or keys_data.get("data") or []
-                                                for idx, k in enumerate(k_list):
-                                                    if isinstance(k, dict):
-                                                        keys_list.append({
-                                                            "id": k.get("id") or f"scraped_{idx+1}",
-                                                            "name": k.get("name") or k.get("label") or f"Groq-Key-{idx+1}",
-                                                            "created_at": format_timestamp_or_str(k.get("created") or k.get("created_at")),
-                                                            "last_used_at": format_timestamp_or_str(k.get("last_use") or k.get("last_used")),
-                                                            "expires": format_timestamp_or_str(k.get("expires_at")) if k.get("expires_at") else "Never",
-                                                            "usage_24h": str(k.get("usage_24h")) if k.get("usage_24h") is not None else "NM",
-                                                            "status": "NM"
-                                                        })
-                                                break
-                                                
-                                        if not keys_list:
-                                            try:
-                                                rows = await page.locator("table tbody tr").all()
-                                                for idx, row in enumerate(rows):
-                                                    cells = await row.locator("td").all_text_contents()
-                                                    if len(cells) >= 2:
-                                                        keys_list.append({
-                                                            "id": f"scraped_{idx + 1}",
-                                                            "name": cells[0].strip(),
-                                                            "created_at": format_timestamp_or_str(cells[2].strip()) if len(cells) > 2 else "NM",
-                                                            "last_used_at": format_timestamp_or_str(cells[3].strip()) if len(cells) > 3 else "NM",
-                                                            "expires": cells[4].strip() if len(cells) > 4 else "NM",
-                                                            "usage_24h": cells[5].strip() if len(cells) > 5 else "NM",
-                                                            "status": "NM"
-                                                        })
-                                            except Exception:
-                                                pass
-                                                
-                                        if keys_list:
-                                            extracted_keys = keys_list
-                                            keys_extracted = True
-                                            current_state = "API_KEYS_EXTRACTION_COMPLETED"
-                                            await update_scraper_stage(service_lower, current_state, "API Keys Extraction Completed")
-                                            log_colored("OK", "API Keys Extracted")
-                                            print("\nExtracted Data:")
-                                            print(json.dumps({
-                                                "total_keys": len(keys_list),
-                                                "active_keys": len(keys_list)
-                                            }, indent=2))
-                                            sys.stdout.flush()
-                                            
-                                            # Capture and cache storage state while browser is open
-                                            cached_storage_state = await context.storage_state()
-                                        else:
-                                            log_colored("WARNING", "No API Keys Found")
-                                            current_state = "EXTRACTION_FAILED"
-                                            await update_scraper_stage(service_lower, current_state, "No API Keys Found")
-                                    except Exception as e:
-                                        log_colored("ERROR", f"API Keys Extraction Failed: {e}")
-                                        current_state = "EXTRACTION_FAILED"
-                                        await update_scraper_stage(service_lower, current_state, f"API Keys Extraction Failed: {e}")
-                            else:
-                                keys_page_logged = False
-                                
-                            if "console.groq.com/dashboard/usage" in url or "/usage" in url:
-                                if not usage_page_logged:
-                                    usage_page_logged = True
-                                    log_colored("OK", "User Entered Usage Page")
-                                    
-                                if not usage_extracted and not usage_countdown_started:
-                                    usage_countdown_started = True
-                                    current_state = "USAGE_PAGE_DETECTED"
-                                    await update_scraper_stage(service_lower, current_state, "Usage Page Detected")
-                                    
-                                    log_colored("COUNTDOWN", "Extracting Usage Metrics...")
-                                    for i in range(10, 0, -1):
-                                        print(f"\033[95m{i}\033[0m")
-                                        sys.stdout.flush()
-                                        await asyncio.sleep(1)
-                                        
-                                    # Run extraction
-                                    try:
-                                        total_spend = None
-                                        for resp in intercepted_responses:
-                                            if "usage" in resp["url"] or "billing" in resp["url"]:
-                                                data = resp["data"]
-                                                if isinstance(data, dict):
-                                                    val = data.get("total_usage") or data.get("total_spend")
-                                                    if val is not None:
-                                                        total_spend = float(val)
-                                                        
-                                        if total_spend is None:
-                                            try:
-                                                page_text = await page.evaluate("() => document.body.innerText")
-                                                spend_match = re.search(r"Total Spend\s*(\$[0-9,.]+)", page_text, re.IGNORECASE)
-                                                if spend_match:
-                                                    total_spend = float(spend_match.group(1).replace(",", ""))
-                                            except Exception:
-                                                pass
-                                                
-                                        scraped_logs = []
-                                        for resp in intercepted_responses:
-                                            if "logs" in resp["url"]:
-                                                if isinstance(resp["data"], dict) and "data" in resp["data"]:
-                                                    scraped_logs = resp["data"]["data"]
-                                                elif isinstance(resp["data"], list):
-                                                    scraped_logs = resp["data"]
-                                                    
-                                        for resp in intercepted_responses:
-                                            if "limits" in resp["url"]:
-                                                data = resp["data"]
-                                                if isinstance(data, dict) and "data" in data:
-                                                    for item in data["data"]:
-                                                        model_id = item.get("id")
-                                                        if model_id:
-                                                            limits[model_id] = {
-                                                                "tpm": item.get("tokens_per_minute") or item.get("tokens_per_day") or 0,
-                                                                "rpm": item.get("requests_per_minute") or item.get("requests_per_day") or 0
-                                                            }
-                                                            
-                                        extracted_spend = total_spend if total_spend is not None else 0.0
-                                        extracted_logs = scraped_logs
-                                        usage_extracted = True
-                                        current_state = "USAGE_EXTRACTION_COMPLETED"
-                                        await update_scraper_stage(service_lower, current_state, "Usage Extraction Completed")
-                                        log_colored("OK", "Usage Data Extracted")
-                                        
-                                        requests_count = len(scraped_logs)
-                                        tokens_count = sum((log.get("input_tokens") or 0) + (log.get("output_tokens") or 0) for log in scraped_logs)
-                                        print(f"\nExtracted Data:")
-                                        print(json.dumps({
-                                            "requests": requests_count,
-                                            "tokens": tokens_count
-                                        }, indent=2))
-                                        sys.stdout.flush()
-                                        
-                                        # Capture and cache storage state while browser is open
-                                        cached_storage_state = await context.storage_state()
-                                    except Exception as e:
-                                        log_colored("ERROR", f"Usage Extraction Failed: {e}")
-                                        current_state = "EXTRACTION_FAILED"
-                                        await update_scraper_stage(service_lower, current_state, f"Usage Extraction Failed: {e}")
-                            else:
-                                usage_page_logged = False
-                        
-                        if keys_extracted and usage_extracted and current_state != "SESSION_COMPLETED":
-                            current_state = "SESSION_COMPLETED"
-                            await update_scraper_stage(service_lower, current_state, "Session Completed")
-                            log_colored("OK", "Session Completed")
+                async def monitor_groq_session():
+                    nonlocal current_state, keys_extracted, usage_extracted, cached_storage_state, extracted_keys, extracted_spend, extracted_logs, limits
+                    
+                    keys_countdown_started = False
+                    usage_countdown_started = False
+                    
+                    keys_page_logged = False
+                    usage_page_logged = False
+                    
+                    last_logged_url = ""
+                    last_logged_state = ""
+                    
+                    while not browser_closed.is_set():
+                        try:
+                            url = page.url
                             
-                    except Exception:
-                        pass
-                    await asyncio.sleep(0.5)
+                            if url != last_logged_url or current_state != last_logged_state:
+                                logger.warning(f"[MONITOR STATE] URL: {url} | State: {current_state}")
+                                last_logged_url = url
+                                last_logged_state = current_state
+                                
+                            # Check for Authentication (run on every tick if not authenticated)
+                            if current_state in ["IDLE", "BROWSER_LAUNCHED"]:
+                                if await check_authenticated():
+                                    current_state = "USER_AUTHENTICATED"
+                                    await update_scraper_stage(service_lower, current_state, "User Authenticated")
+                                    log_colored("OK", "User Authenticated")
+                                    # Capture initial cookies/storage state
+                                    cached_storage_state = await context.storage_state()
+                            
+                            # Detect page transitions and extractions (only once authenticated)
+                            if current_state not in ["IDLE", "BROWSER_LAUNCHED"]:
+                                url_lower = url.lower()
+                                is_keys_page = "/keys" in url_lower or "console.groq.com/keys" in url_lower
+                                is_usage_page = "/usage" in url_lower or "console.groq.com/dashboard/usage" in url_lower
+                                
+                                if is_keys_page:
+                                    if not keys_page_logged:
+                                        keys_page_logged = True
+                                        log_colored("OK", "User Entered API Keys Page")
+                                        
+                                    if not keys_extracted and not keys_countdown_started:
+                                        keys_countdown_started = True
+                                        current_state = "API_KEYS_PAGE_DETECTED"
+                                        await update_scraper_stage(service_lower, current_state, "API Keys Page Detected")
+                                        
+                                        log_colored("COUNTDOWN", "Extracting in 10 seconds...")
+                                        for i in range(9, 0, -1):
+                                            if browser_closed.is_set():
+                                                break
+                                            await asyncio.sleep(1)
+                                            log_colored("COUNTDOWN", f"{i}")
+                                        
+                                        if not browser_closed.is_set():
+                                            await asyncio.sleep(1)
+                                            
+                                        if not browser_closed.is_set():
+                                            # Run extraction
+                                            try:
+                                                keys_list = []
+                                                for resp in intercepted_responses:
+                                                    if "keys" in resp["url"]:
+                                                        keys_data = resp["data"]
+                                                        k_list = []
+                                                        if isinstance(keys_data, list):
+                                                            k_list = keys_data
+                                                        elif isinstance(keys_data, dict):
+                                                            k_list = keys_data.get("keys") or keys_data.get("data") or []
+                                                        for idx, k in enumerate(k_list):
+                                                            if isinstance(k, dict):
+                                                                keys_list.append({
+                                                                    "id": k.get("id") or f"scraped_{idx+1}",
+                                                                    "name": k.get("name") or k.get("label") or f"Groq-Key-{idx+1}",
+                                                                    "created_at": format_timestamp_or_str(k.get("created") or k.get("created_at")),
+                                                                    "last_used_at": format_timestamp_or_str(k.get("last_use") or k.get("last_used")),
+                                                                    "expires": format_timestamp_or_str(k.get("expires_at")) if k.get("expires_at") else "Never",
+                                                                    "usage_24h": str(k.get("usage_24h")) if k.get("usage_24h") is not None else "NM",
+                                                                    "status": "NM"
+                                                                })
+                                                        break
+                                                        
+                                                if not keys_list:
+                                                    try:
+                                                        rows = await page.locator("table tbody tr").all()
+                                                        for idx, row in enumerate(rows):
+                                                            cells = await row.locator("td").all_text_contents()
+                                                            if len(cells) >= 2:
+                                                                keys_list.append({
+                                                                    "id": f"scraped_{idx + 1}",
+                                                                    "name": cells[0].strip(),
+                                                                    "created_at": format_timestamp_or_str(cells[2].strip()) if len(cells) > 2 else "NM",
+                                                                    "last_used_at": format_timestamp_or_str(cells[3].strip()) if len(cells) > 3 else "NM",
+                                                                    "expires": cells[4].strip() if len(cells) > 4 else "NM",
+                                                                    "usage_24h": cells[5].strip() if len(cells) > 5 else "NM",
+                                                                    "status": "NM"
+                                                                })
+                                                    except Exception:
+                                                        pass
+                                                        
+                                                if keys_list:
+                                                    extracted_keys = keys_list
+                                                    keys_extracted = True
+                                                    current_state = "API_KEYS_EXTRACTION_COMPLETED"
+                                                    await update_scraper_stage(service_lower, current_state, "API Keys Extraction Completed")
+                                                    log_colored("OK", "API Keys Extracted")
+                                                    print("\nExtracted Data:")
+                                                    print(json.dumps({
+                                                        "total_keys": len(keys_list),
+                                                        "active_keys": len(keys_list)
+                                                    }, indent=2))
+                                                    sys.stdout.flush()
+                                                    
+                                                    # Capture and cache storage state while browser is open
+                                                    cached_storage_state = await context.storage_state()
+                                                else:
+                                                    log_colored("WARNING", "No API Keys Found")
+                                                    current_state = "EXTRACTION_FAILED"
+                                                    await update_scraper_stage(service_lower, current_state, "No API Keys Found")
+                                            except Exception as e:
+                                                log_colored("ERROR", f"API Keys Extraction Failed: {e}")
+                                                current_state = "EXTRACTION_FAILED"
+                                                await update_scraper_stage(service_lower, current_state, f"API Keys Extraction Failed: {e}")
+                                else:
+                                    keys_page_logged = False
+                                    
+                                if is_usage_page:
+                                    if not usage_page_logged:
+                                        usage_page_logged = True
+                                        log_colored("OK", "User Entered Usage Page")
+                                        
+                                    if not usage_extracted and not usage_countdown_started:
+                                        usage_countdown_started = True
+                                        current_state = "USAGE_PAGE_DETECTED"
+                                        await update_scraper_stage(service_lower, current_state, "Usage Page Detected")
+                                        
+                                        log_colored("COUNTDOWN", "Extracting Usage Metrics...")
+                                        for i in range(10, 0, -1):
+                                            if browser_closed.is_set():
+                                                break
+                                            print(f"\033[95m{i}\033[0m")
+                                            sys.stdout.flush()
+                                            await asyncio.sleep(1)
+                                            
+                                        if not browser_closed.is_set():
+                                            # Run extraction
+                                            try:
+                                                total_spend = None
+                                                for resp in intercepted_responses:
+                                                    if "usage" in resp["url"] or "billing" in resp["url"]:
+                                                        data = resp["data"]
+                                                        if isinstance(data, dict):
+                                                            val = data.get("total_usage") or data.get("total_spend")
+                                                            if val is not None:
+                                                                total_spend = float(val)
+                                                                
+                                                if total_spend is None:
+                                                    try:
+                                                        page_text = await page.evaluate("() => document.body.innerText")
+                                                        spend_match = re.search(r"Total Spend\s*(\$[0-9,.]+)", page_text, re.IGNORECASE)
+                                                        if spend_match:
+                                                            total_spend = float(spend_match.group(1).replace(",", ""))
+                                                    except Exception:
+                                                        pass
+                                                        
+                                                scraped_logs = []
+                                                for resp in intercepted_responses:
+                                                    if "logs" in resp["url"]:
+                                                        if isinstance(resp["data"], dict) and "data" in resp["data"]:
+                                                            scraped_logs = resp["data"]["data"]
+                                                        elif isinstance(resp["data"], list):
+                                                            scraped_logs = resp["data"]
+                                                            
+                                                for resp in intercepted_responses:
+                                                    if "limits" in resp["url"]:
+                                                        data = resp["data"]
+                                                        if isinstance(data, dict) and "data" in data:
+                                                            for item in data["data"]:
+                                                                model_id = item.get("id")
+                                                                if model_id:
+                                                                    limits[model_id] = {
+                                                                        "tpm": item.get("tokens_per_minute") or item.get("tokens_per_day") or 0,
+                                                                        "rpm": item.get("requests_per_minute") or item.get("requests_per_day") or 0
+                                                                    }
+                                                                    
+                                                extracted_spend = total_spend if total_spend is not None else 0.0
+                                                extracted_logs = scraped_logs
+                                                usage_extracted = True
+                                                current_state = "USAGE_EXTRACTION_COMPLETED"
+                                                await update_scraper_stage(service_lower, current_state, "Usage Extraction Completed")
+                                                log_colored("OK", "Usage Data Extracted")
+                                                
+                                                requests_count = len(scraped_logs)
+                                                tokens_count = sum((log.get("input_tokens") or 0) + (log.get("output_tokens") or 0) for log in scraped_logs)
+                                                print(f"\nExtracted Data:")
+                                                print(json.dumps({
+                                                    "requests": requests_count,
+                                                    "tokens": tokens_count
+                                                }, indent=2))
+                                                sys.stdout.flush()
+                                                
+                                                # Capture and cache storage state while browser is open
+                                                cached_storage_state = await context.storage_state()
+                                            except Exception as e:
+                                                log_colored("ERROR", f"Usage Extraction Failed: {e}")
+                                                current_state = "EXTRACTION_FAILED"
+                                                await update_scraper_stage(service_lower, current_state, f"Usage Extraction Failed: {e}")
+                                else:
+                                    usage_page_logged = False
+                            
+                            if keys_extracted and usage_extracted and current_state != "SESSION_COMPLETED":
+                                current_state = "SESSION_COMPLETED"
+                                await update_scraper_stage(service_lower, current_state, "Session Completed")
+                                log_colored("OK", "Session Completed")
+                                
+                        except Exception as loop_err:
+                            logger.warning(f"[DEBUG LOOP ERROR] {loop_err}")
+                        await asyncio.sleep(0.5)
 
             monitor_task = None
             if is_groq:
@@ -913,6 +932,9 @@ async def _run_interactive_login_inner(service: str) -> Dict[str, Any]:
                     }
                 )
             finally:
+                if is_groq:
+                    for nl, level in old_levels.items():
+                        logging.getLogger(nl).setLevel(level)
                 if monitor_task:
                     monitor_task.cancel()
                     try:

@@ -25,5 +25,5 @@ def decrypt_value(token: str) -> str:
         return fernet.decrypt(token.encode()).decode()
     except Exception as e:
         # Fallback or log if decryption fails
-        logger.warning(f"Decryption failure: {str(e)}")
+        logger.debug(f"Decryption failure: {str(e)}")
         return ""
