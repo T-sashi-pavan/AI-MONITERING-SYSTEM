@@ -1,0 +1,74 @@
+# Algonox Secretary .gitignore
+
+# Ignore all markdown files by default
+**/*.md
+
+# Allow README.md files
+!**/README.md
+!README.md
+
+# Python Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+venv*/
+
+# Python Cache & Bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Sensitive Configuration & Credentials
+.env
+.env.*
+*.env
+secrets.json
+credentials.json
+*.pem
+*.key
+*.cert
+*.pfx
+
+# Local Database Files & Locks
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Node.js / Frontend dependencies & builds
+node_modules/
+dist/
+build/
+.next/
+.nuxt/
+out/
+.cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Playwright & Scraper local state
+.playwright/
+playwright-report/
+test-results/
+
+# System & OS Files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# IDE & Editor Settings
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
