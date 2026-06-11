@@ -4,10 +4,14 @@ import sys
 from pymongo import MongoClient
 from pymongo.errors import ServerSelectionTimeoutError
 
-mongo_uri = "mongodb+srv://sessi111111_db_user:SECRETARY@cluster0.ngvmg1r.mongodb.net/?appName=Cluster0"
+# Load settings from app configuration to avoid hardcoding credentials
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from app.config import settings
+
+mongo_uri = settings.MONGODB_URI
 db_name = mongo_uri.split("/")[-1].split("?")[0]
 if not db_name:
-    db_name = "Cluster0"
+    db_name = "secretary_dashboard"
 
 print(f"Connecting to MongoDB URI with a 5s timeout... DB: {db_name}")
 try:
