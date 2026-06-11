@@ -511,28 +511,32 @@ async def _run_interactive_login_inner(service: str) -> Dict[str, Any]:
             async def monitor_groq_session():
                 nonlocal current_state, keys_extracted, usage_extracted, cached_storage_state, extracted_keys, extracted_spend, extracted_logs, limits
                 
-                last_url = ""
                 keys_countdown_started = False
                 usage_countdown_started = False
+                
+                keys_page_logged = False
+                usage_page_logged = False
                 
                 while not browser_closed.is_set():
                     try:
                         url = page.url
-                        if url and url != last_url:
-                            last_url = url
-                            
-                            # Check for Authentication
-                            if current_state in ["IDLE", "BROWSER_LAUNCHED"]:
-                                if await check_authenticated():
-                                    current_state = "USER_AUTHENTICATED"
-                                    await update_scraper_stage(service_lower, current_state, "User Authenticated")
-                                    log_colored("OK", "User Authenticated")
-                                    # Capture initial cookies/storage state
-                                    cached_storage_state = await context.storage_state()
-                            
-                            # Detect page transitions
+                        
+                        # Check for Authentication (run on every tick if not authenticated)
+                        if current_state in ["IDLE", "BROWSER_LAUNCHED"]:
+                            if await check_authenticated():
+                                current_state = "USER_AUTHENTICATED"
+                                await update_scraper_stage(service_lower, current_state, "User Authenticated")
+                                log_colored("OK", "User Authenticated")
+                                # Capture initial cookies/storage state
+                                cached_storage_state = await context.storage_state()
+                        
+                        # Detect page transitions and extractions (only once authenticated)
+                        if current_state not in ["IDLE", "BROWSER_LAUNCHED"]:
                             if "console.groq.com/keys" in url:
-                                log_colored("OK", "User Entered API Keys Page")
+                                if not keys_page_logged:
+                                    keys_page_logged = True
+                                    log_colored("OK", "User Entered API Keys Page")
+                                    
                                 if not keys_extracted and not keys_countdown_started:
                                     keys_countdown_started = True
                                     current_state = "API_KEYS_PAGE_DETECTED"
@@ -609,9 +613,14 @@ async def _run_interactive_login_inner(service: str) -> Dict[str, Any]:
                                         log_colored("ERROR", f"API Keys Extraction Failed: {e}")
                                         current_state = "EXTRACTION_FAILED"
                                         await update_scraper_stage(service_lower, current_state, f"API Keys Extraction Failed: {e}")
-                                        
-                            elif "console.groq.com/dashboard/usage" in url or "/usage" in url:
-                                log_colored("OK", "User Entered Usage Page")
+                            else:
+                                keys_page_logged = False
+                                
+                            if "console.groq.com/dashboard/usage" in url or "/usage" in url:
+                                if not usage_page_logged:
+                                    usage_page_logged = True
+                                    log_colored("OK", "User Entered Usage Page")
+                                    
                                 if not usage_extracted and not usage_countdown_started:
                                     usage_countdown_started = True
                                     current_state = "USAGE_PAGE_DETECTED"
@@ -685,15 +694,9 @@ async def _run_interactive_login_inner(service: str) -> Dict[str, Any]:
                                         log_colored("ERROR", f"Usage Extraction Failed: {e}")
                                         current_state = "EXTRACTION_FAILED"
                                         await update_scraper_stage(service_lower, current_state, f"Usage Extraction Failed: {e}")
+                            else:
+                                usage_page_logged = False
                         
-                        # Set user authenticated if not already done and we see cookies
-                        if current_state in ["IDLE", "BROWSER_LAUNCHED"]:
-                            if await check_authenticated():
-                                current_state = "USER_AUTHENTICATED"
-                                await update_scraper_stage(service_lower, current_state, "User Authenticated")
-                                log_colored("OK", "User Authenticated")
-                                cached_storage_state = await context.storage_state()
-                                
                         if keys_extracted and usage_extracted and current_state != "SESSION_COMPLETED":
                             current_state = "SESSION_COMPLETED"
                             await update_scraper_stage(service_lower, current_state, "Session Completed")

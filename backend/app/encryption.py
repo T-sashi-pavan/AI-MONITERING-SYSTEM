@@ -1,5 +1,8 @@
+import logging
 from cryptography.fernet import Fernet
 from app.config import settings
+
+logger = logging.getLogger("dashboard.encryption")
 
 def get_fernet() -> Fernet:
     """Helper to get a Fernet instance with the configured key."""
@@ -22,5 +25,5 @@ def decrypt_value(token: str) -> str:
         return fernet.decrypt(token.encode()).decode()
     except Exception as e:
         # Fallback or log if decryption fails
-        print(f"Decryption failure: {str(e)}")
+        logger.warning(f"Decryption failure: {str(e)}")
         return ""
