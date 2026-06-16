@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  dashboard:
+    image: ${ECR_REGISTRY}/algonox-secretary:latest
+    container_name: algonox_secretary_dashboard_prod
+    restart: unless-stopped
+    ports:
+      - "80:8000" # Bind to host HTTP port 80, forwarding to container FastAPI port 8000
+    environment:
+      - PORT=8000
+      - PYTHONUNBUFFERED=1
+      - MONGODB_URI=${MONGODB_URI}
+      - ADMIN_USERNAME=${ADMIN_USERNAME}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - ENCRYPTION_SECRET=${ENCRYPTION_SECRET}
+      - SESSION_SECRET=${SESSION_SECRET}
+      - MY_OAUTH_MAIL=${MY_OAUTH_MAIL}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - SMTP_FROM=${SMTP_FROM}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+      # API admin keys
+      - OPENAI_ADMIN_KEY=${OPENAI_ADMIN_KEY}
+      - RENDER_API_KEY=${RENDER_API_KEY}
+      - ELEVENLABS_ADMIN_KEY=${ELEVENLABS_ADMIN_KEY}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - CONVEX_ACCESS_TOKEN=${CONVEX_ACCESS_TOKEN}
+    volumes:
+      - dashboard_prod_data:/app/data
+
+volumes:
+  dashboard_prod_data:
+    driver: local

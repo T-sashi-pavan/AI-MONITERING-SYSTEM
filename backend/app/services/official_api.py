@@ -15,23 +15,23 @@ logger = logging.getLogger("dashboard.official_api")
 async def seed_env_admin_keys():
     """
     Called once on application startup.
-    Reads OPENAI_ADMIN_KEY, RENDER_API_KEY, ELEVENLABS_ADMIN_KEY,
+    Reads OPENAI_ADMIN_KEY, ELEVENLABS_ADMIN_KEY,
     TWILIO_ACCOUNT_SID/AUTH_TOKEN, and CONVEX_ACCESS_TOKEN from .env
     and upserts them into api_monitoring so that the frontend can call
     /api/keys/{id}/sync without the user manually entering anything.
     """
+    # Clean up Render official keys from database entirely
+    try:
+        await db.api_monitoring.delete_many({"service_name": "render"})
+    except Exception as cleanup_err:
+        logger.error(f"Failed to delete old Render keys: {cleanup_err}")
+
     seeds = [
         {
             "service_name": "openai",
             "provider_name": "OpenAI Organisation",
             "env_key": settings.OPENAI_ADMIN_KEY,
             "total_quota": 200.0,
-        },
-        {
-            "service_name": "render",
-            "provider_name": "Render Services",
-            "env_key": settings.RENDER_API_KEY,
-            "total_quota": 0.0,
         },
     ]
     if settings.ELEVENLABS_ADMIN_KEY:
@@ -241,10 +241,6 @@ async def sync_single_key(service_doc: dict):
                 "character_limit": char_limit,
                 "next_reset": "06/25/2026"
             }
-        elif service_name == "render":
-            status = "active"
-            rate_limits = {"requests_limit": "N/A", "tokens_limit": "N/A",
-                           "requests_remaining": "N/A", "tokens_remaining": "N/A"}
         else:
             rate_limits = {
                 "requests_limit": "1000", "tokens_limit": "100000",
@@ -693,100 +689,7 @@ async def sync_single_key(service_doc: dict):
                         except Exception:
                             pass
 
-                # -----------------------------------------------------------
-                # RENDER
-                # -----------------------------------------------------------
-                elif service_name == "render":
-                    render_headers = {
-                        "Authorization": f"Bearer {api_key}",
-                        "Accept": "application/json"
-                    }
 
-                    # 1. List all services
-                    try:
-                        svc_resp = await client.get(
-                            "https://api.render.com/v1/services?limit=100",
-                            headers=render_headers
-                        )
-                        if svc_resp.status_code == 200:
-                            status = "active"
-                            rate_limits = {
-                                "requests_limit":     "N/A",
-                                "tokens_limit":       "N/A",
-                                "requests_remaining": "N/A",
-                                "tokens_remaining":   "N/A",
-                            }
-                            for item in svc_resp.json():
-                                svc = item.get("service", item)
-                                svc_id   = svc.get("id", "")
-                                svc_name = svc.get("name", "Unnamed")
-                                svc_type = svc.get("type", "N/A")
-                                svc_status = svc.get("suspended", "not_suspended")
-                                svc_url  = svc.get("serviceDetails", {}).get("url", "")
-                                last_deploy = svc.get("updatedAt", "")
-
-                                service_entry = {
-                                    "id":          svc_id,
-                                    "name":        svc_name,
-                                    "type":        svc_type,
-                                    "status":      "Suspended" if svc_status == "suspended" else "Live",
-                                    "url":         svc_url,
-                                    "last_deploy": _fmt_unix(last_deploy),
-                                    "created_at":  _fmt_unix(svc.get("createdAt", "")),
-                                    "region":      svc.get("region", "N/A"),
-                                }
-                                keys_list.append(service_entry)
-
-                                # Upsert into service_urls collection
-                                if svc_url:
-                                    await db.service_urls.update_one(
-                                        {"url": svc_url},
-                                        {"$set": {
-                                            "name":          svc_name,
-                                            "render_status": service_entry["status"],
-                                            "render_type":   svc_type,
-                                            "discovered_from": "render_api",
-                                        }, "$setOnInsert": {
-                                            "is_enabled": False,
-                                            "created_at": datetime.utcnow()
-                                        }},
-                                        upsert=True
-                                    )
-                            usage_detail["total_services"] = len(keys_list)
-                            usage_detail["live_services"]  = sum(1 for s in keys_list if s["status"] == "Live")
-                            usage_detail["suspended_services"] = sum(1 for s in keys_list if s["status"] == "Suspended")
-
-                            # 2. Get deploy history for first 5 services
-                            deploy_logs = []
-                            for svc_entry in keys_list[:5]:
-                                try:
-                                    dep_resp = await client.get(
-                                        f"https://api.render.com/v1/services/{svc_entry['id']}/deploys?limit=3",
-                                        headers=render_headers
-                                    )
-                                    if dep_resp.status_code == 200:
-                                        for d in dep_resp.json():
-                                            dep = d.get("deploy", d)
-                                            deploy_logs.append({
-                                                "service": svc_entry["name"],
-                                                "status":  dep.get("status", "N/A"),
-                                                "created": _fmt_unix(dep.get("createdAt")),
-                                                "finished": _fmt_unix(dep.get("finishedAt")),
-                                                "commit":  dep.get("commit", {}).get("message", "N/A")[:60],
-                                            })
-                                except Exception:
-                                    pass
-                            usage_detail["recent_deploys"] = deploy_logs
-
-                        elif svc_resp.status_code == 401:
-                            error_message = "Invalid Render API key (401)"
-                            status = "invalid"
-                        else:
-                            error_message = f"HTTP {svc_resp.status_code}: {svc_resp.text[:200]}"
-                            status = "invalid"
-                    except httpx.RequestError as re_err:
-                        status = "unknown"
-                        error_message = f"Network error: {str(re_err)}"
 
                 # -----------------------------------------------------------
                 # TWILIO
@@ -1235,10 +1138,58 @@ async def sync_single_key(service_doc: dict):
                         "error": "-"
                     })
 
-            log_doc = {
-                "service": service_key,
-                "status": "success",
-                "extracted_data": {
+            if service_key == "elevenlabs":
+                plan_name = tier.capitalize() if 'tier' in locals() and tier else "Free"
+                total_credits = int(total_quota)
+                used_credits = int(used_quota)
+                remaining_credits = max(total_credits - used_credits, 0)
+                overused_credits = max(used_credits - total_credits, 0)
+                
+                billing_status = "Billing Limit Exceeded" if overused_credits > 0 else "Within Limit"
+                
+                api_keys_formatted = []
+                try:
+                    dec_key = decrypt_value(service_doc["api_key"])
+                    masked_key = f"••••••••{dec_key[-4:]}" if len(dec_key) >= 4 else "••••••••"
+                except Exception:
+                    masked_key = "••••••••"
+                
+                created_at_val = _fmt_unix(service_doc.get("created_at_time")) or "NM"
+                api_keys_formatted.append({
+                    "name": service_doc.get("provider_name", "ElevenLabs Official Key"),
+                    "key_id": masked_key,
+                    "created_at": created_at_val,
+                    "status": "Enabled"
+                })
+                
+                if overused_credits > 0:
+                    try:
+                        from app.services.notifier import check_elevenlabs_overusage_alert
+                        import asyncio
+                        asyncio.create_task(check_elevenlabs_overusage_alert(used_credits, total_credits))
+                    except Exception as alert_err:
+                        logger.error(f"Failed to trigger official ElevenLabs overusage alert check: {alert_err}")
+                
+                log_doc = {
+                    "service": service_key,
+                    "status": "success",
+                    "extracted_data": {
+                        "provider": "elevenlabs",
+                        "plan_name": plan_name,
+                        "total_credits": total_credits,
+                        "used_credits": used_credits,
+                        "remaining_credits": remaining_credits,
+                        "exceeded_credits": overused_credits,
+                        "overused_credits": overused_credits,
+                        "billing_status": billing_status,
+                        "api_key_count": len(api_keys_formatted),
+                        "api_keys": api_keys_formatted,
+                        "last_updated": datetime.utcnow().isoformat() + "Z"
+                    },
+                    "scraped_at": datetime.utcnow()
+                }
+            else:
+                extracted_data_payload = {
                     "api_keys_count": scraped_keys_count if service_key != "render" else 0,
                     "limits": rate_limits,
                     "usage_metrics": {
@@ -1252,9 +1203,36 @@ async def sync_single_key(service_doc: dict):
                     "scraped_logs": scraped_logs,
                     "additional_resources": add_res,
                     "timestamp": datetime.utcnow()
-                },
-                "scraped_at": datetime.utcnow()
-            }
+                }
+                
+                if service_key == "openai":
+                    extracted_data_payload.update({
+                        "active_keys": scraped_keys_count,
+                        "estimated_spend": used_quota,
+                        "usage_limit": total_quota,
+                        "remaining_budget": max(0.0, total_quota - used_quota)
+                    })
+                elif service_key == "render":
+                    last_browser_log = await db.scraping_logs.find_one(
+                        {"service": "render", "status": "success", "extracted_data.currentPlan": {"$exists": True}},
+                        sort=[("scraped_at", -1)]
+                    )
+                    if last_browser_log:
+                        last_ext = last_browser_log.get("extracted_data", {})
+                        extracted_data_payload.update({
+                            "currentPlan": last_ext.get("currentPlan"),
+                            "creditBalance": last_ext.get("creditBalance"),
+                            "includedUsage": last_ext.get("includedUsage"),
+                            "invoiceHistory": last_ext.get("invoiceHistory"),
+                            "billingAlertActive": last_ext.get("billingAlertActive")
+                        })
+
+                log_doc = {
+                    "service": service_key,
+                    "status": "success",
+                    "extracted_data": extracted_data_payload,
+                    "scraped_at": datetime.utcnow()
+                }
             
             # Insert a fresh scraping log to update history
             await db.scraping_logs.insert_one(log_doc)

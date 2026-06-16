@@ -1,0 +1,91 @@
+{
+  "family": "algonox-secretary-task",
+  "networkMode": "awsvpc",
+  "containerDefinitions": [
+    {
+      "name": "secretary-dashboard",
+      "image": "<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/algonox-secretary:latest",
+      "cpu": 1024,
+      "memory": 2048,
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "hostPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        {
+          "name": "PORT",
+          "value": "8000"
+        },
+        {
+          "name": "PYTHONUNBUFFERED",
+          "value": "1"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "MONGODB_URI",
+          "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<AWS_ACCOUNT_ID>:secret:AlgonoxSecretarySecrets:MONGODB_URI::"
+        },
+        {
+          "name": "ADMIN_USERNAME",
+          "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<AWS_ACCOUNT_ID>:secret:AlgonoxSecretarySecrets:ADMIN_USERNAME::"
+        },
+        {
+          "name": "ADMIN_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<AWS_ACCOUNT_ID>:secret:AlgonoxSecretarySecrets:ADMIN_PASSWORD::"
+        },
+        {
+          "name": "JWT_SECRET_KEY",
+          "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<AWS_ACCOUNT_ID>:secret:AlgonoxSecretarySecrets:JWT_SECRET_KEY::"
+        },
+        {
+          "name": "MY_OAUTH_MAIL",
+          "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<AWS_ACCOUNT_ID>:secret:AlgonoxSecretarySecrets:MY_OAUTH_MAIL::"
+        },
+        {
+          "name": "SMTP_HOST",
+          "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<AWS_ACCOUNT_ID>:secret:AlgonoxSecretarySecrets:SMTP_HOST::"
+        },
+        {
+          "name": "SMTP_PORT",
+          "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<AWS_ACCOUNT_ID>:secret:AlgonoxSecretarySecrets:SMTP_PORT::"
+        },
+        {
+          "name": "SMTP_USER",
+          "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<AWS_ACCOUNT_ID>:secret:AlgonoxSecretarySecrets:SMTP_USER::"
+        },
+        {
+          "name": "SMTP_PASS",
+          "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<AWS_ACCOUNT_ID>:secret:AlgonoxSecretarySecrets:SMTP_PASS::"
+        },
+        {
+          "name": "SMTP_FROM",
+          "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<AWS_ACCOUNT_ID>:secret:AlgonoxSecretarySecrets:SMTP_FROM::"
+        },
+        {
+          "name": "ALLOWED_ORIGINS",
+          "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<AWS_ACCOUNT_ID>:secret:AlgonoxSecretarySecrets:ALLOWED_ORIGINS::"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/algonox-secretary",
+          "awslogs-region": "<AWS_REGION>",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ],
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::<AWS_ACCOUNT_ID>:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::<AWS_ACCOUNT_ID>:role/ecsTaskRole"
+}

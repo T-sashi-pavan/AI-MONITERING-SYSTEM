@@ -33,7 +33,7 @@ export default function App() {
 
   const handleLogout = async () => {
     try {
-      await fetch('http://localhost:8000/api/auth/logout', {
+      await fetch('/api/auth/logout', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -50,7 +50,7 @@ export default function App() {
   // Token wellness check on application startup
   useEffect(() => {
     if (token) {
-      fetch('http://localhost:8000/api/auth/me', {
+      fetch('/api/auth/me', {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       .then(res => {

@@ -1,0 +1,47 @@
+# ==============================================================
+# Render Blueprint Infrastructure-as-Code Configuration
+# Put this file in the root of your Git repository.
+# Render will automatically parse it to configure your dashboard service.
+# ==============================================================
+services:
+  - type: web
+    name: algonox-secretary-dashboard
+    # Use the unified Dockerfile to build and run the application
+    env: docker
+    dockerfilePath: Dockerfile
+    dockerContext: .
+    plan: starter # Starter instance type (512MB-1GB RAM) to support Playwright Chromium execution
+    port: 8000 # Internal FastAPI container port
+    envVars:
+      - key: PORT
+        value: "8000"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      # MongoDB Atlas connection string (Will prompt in Render UI during initialization)
+      - key: MONGODB_URI
+        sync: false
+      # Admin credentials (Default is admin/secretary)
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        sync: false
+      # 64-character hex JWT secret key
+      - key: JWT_SECRET_KEY
+        sync: false
+      # System administrator email
+      - key: MY_OAUTH_MAIL
+        value: SESSI111111@GMAIL.COM
+      # Dynamic CORS allowed origins (Use * to allow all, or specific domain)
+      - key: ALLOWED_ORIGINS
+        value: "*"
+      # SMTP details for alerts
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false

@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
@@ -16,8 +17,11 @@ from app.services.scraper import (
     scrape_anthropic_account,
     scrape_gemini_account,
     scrape_elevenlabs_account,
-    stop_active_session
+    stop_active_session,
+    get_session_status_db
 )
+
+logger = logging.getLogger("dashboard.sessions")
 
 router = APIRouter(prefix="/api/sessions", tags=["OAuth Sessions"])
 
@@ -53,12 +57,15 @@ async def list_sessions(admin: dict = Depends(get_current_admin)):
     services = SUPPORTED_SERVICES
     results = []
     
+    logger.info("[SYNC] Dashboard Refreshed")
+    
     for svc in services:
         doc = await db.oauth_sessions.find_one({"service": svc})
         if doc:
+            current_status = await get_session_status_db(svc)
             results.append(SessionStatusResponse(
                 service=svc,
-                status=doc.get("status", "unauthenticated"),
+                status=current_status,
                 last_login=doc.get("last_login"),
                 last_successful_scrape=doc.get("last_successful_scrape"),
                 error_message=doc.get("error_message"),
@@ -165,11 +172,20 @@ async def trigger_scrape(
     if service not in SUPPORTED_SERVICES:
         raise HTTPException(status_code=400, detail=f"Unsupported service. Choose from {SUPPORTED_SERVICES}.")
 
+    logger.info("[SYNC] Browser Sync Requested")
+
     session = await db.oauth_sessions.find_one({"service": service})
     if not session or not session.get("storage_state"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"No authenticated session state found for {service}. Please complete login first."
+        )
+
+    current_status = await get_session_status_db(service)
+    if current_status == "EXPIRED":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Session expired. Reconnect browser."
         )
 
     # Scrape function map

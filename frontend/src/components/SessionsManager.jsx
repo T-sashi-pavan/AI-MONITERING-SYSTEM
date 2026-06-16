@@ -40,7 +40,7 @@ export default function SessionsManager({ token, platform }) {
 
   const fetchSessions = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/sessions', {
+      const response = await fetch('/api/sessions', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
@@ -54,7 +54,7 @@ export default function SessionsManager({ token, platform }) {
 
   const fetchOfficialKeys = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/keys', {
+      const response = await fetch('/api/keys', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
@@ -67,7 +67,7 @@ export default function SessionsManager({ token, platform }) {
   const fetchLogs = async (serviceName) => {
     try {
       setLogsLoading(true);
-      const response = await fetch(`http://localhost:8000/api/sessions/logs/${serviceName}`, {
+      const response = await fetch(`/api/sessions/logs/${serviceName}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
@@ -79,22 +79,57 @@ export default function SessionsManager({ token, platform }) {
     }
   };
 
-  // Poll sessions and official keys in real-time every 2 seconds (faster if actively scraping/authenticating)
+  // Decoupled useEffects to prevent infinite polling loop and tab switching leaks
+  const sessionsRef = useRef([]);
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
+
+  // Tab switching: clear logs and reset selected log to prevent leaking old data from the previous tab
+  useEffect(() => {
+    setLogs([]);
+    setSelectedLogId(null);
+    fetchLogs(activeTab);
+  }, [token, activeTab]);
+
+  // Watch scraper stage transition to COMPLETED or FAILED to refresh logs
+  const prevStageRef = useRef(null);
+  useEffect(() => {
+    const currentSession = sessions.find(s => s.service === activeTab);
+    const currentStage = currentSession?.current_stage;
+    if (prevStageRef.current && prevStageRef.current !== currentStage) {
+      if (currentStage === 'COMPLETED' || currentStage === 'FAILED') {
+        fetchLogs(activeTab);
+      }
+    }
+    prevStageRef.current = currentStage;
+  }, [sessions, activeTab]);
+
+  // Poll sessions and official keys dynamically in the background (no infinite loops)
   useEffect(() => {
     fetchSessions();
-    fetchLogs(activeTab);
     fetchOfficialKeys();
-    
-    const hasActiveSession = sessions.some(s => s.status === 'authenticating' || (s.current_stage && s.current_stage !== 'COMPLETED' && s.current_stage !== 'FAILED'));
-    const delay = hasActiveSession ? 800 : 2000;
-    
-    const interval = setInterval(() => {
-      fetchSessions();
-      fetchOfficialKeys();
-    }, delay);
-    
-    return () => clearInterval(interval);
-  }, [token, activeTab, sessions]);
+
+    let timerId = null;
+
+    const runPoll = async () => {
+      await fetchSessions();
+      await fetchOfficialKeys();
+      
+      const hasActiveSession = sessionsRef.current.some(
+        s => s.status === 'authenticating' || 
+        (s.current_stage && s.current_stage !== 'COMPLETED' && s.current_stage !== 'FAILED')
+      );
+      const delay = hasActiveSession ? 1000 : 3000;
+      timerId = setTimeout(runPoll, delay);
+    };
+
+    timerId = setTimeout(runPoll, 3000);
+
+    return () => {
+      if (timerId) clearTimeout(timerId);
+    };
+  }, [token]);
 
   // Scroll terminal logs to bottom automatically
   useEffect(() => {
@@ -118,7 +153,7 @@ export default function SessionsManager({ token, platform }) {
 
   const handleInteractiveLogin = async (serviceName) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/sessions/interactive/${serviceName}`, {
+      const response = await fetch(`/api/sessions/interactive/${serviceName}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -139,7 +174,7 @@ export default function SessionsManager({ token, platform }) {
     setModalLoading(true);
 
     try {
-      const response = await fetch(`http://localhost:8000/api/sessions/manual/${activeTab}`, {
+      const response = await fetch(`/api/sessions/manual/${activeTab}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -168,7 +203,7 @@ export default function SessionsManager({ token, platform }) {
 
   const handleTriggerScrape = async (serviceName) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/sessions/scrape/${serviceName}`, {
+      const response = await fetch(`/api/sessions/scrape/${serviceName}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -186,7 +221,7 @@ export default function SessionsManager({ token, platform }) {
   const handleClearLogs = async (serviceName) => {
     if (!window.confirm("Are you sure you want to permanently delete all historical scraping logs for this service?")) return;
     try {
-      const response = await fetch(`http://localhost:8000/api/sessions/logs/clear/${serviceName}`, {
+      const response = await fetch(`/api/sessions/logs/clear/${serviceName}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -204,7 +239,7 @@ export default function SessionsManager({ token, platform }) {
 
   const handleStopExecution = async (serviceName) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/sessions/stop/${serviceName}`, {
+      const response = await fetch(`/api/sessions/stop/${serviceName}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -236,7 +271,7 @@ export default function SessionsManager({ token, platform }) {
     const serviceLabel = serviceLabelMap[activeTab] || 'Groq';
 
     try {
-      const response = await fetch('http://localhost:8000/api/keys', {
+      const response = await fetch('/api/keys', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -271,7 +306,7 @@ export default function SessionsManager({ token, platform }) {
   const handleSyncOfficialKey = async (keyId) => {
     try {
       setSyncingKeyId(keyId);
-      const response = await fetch(`http://localhost:8000/api/keys/${keyId}/sync`, {
+      const response = await fetch(`/api/keys/${keyId}/sync`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -300,7 +335,7 @@ export default function SessionsManager({ token, platform }) {
       setSyncingKeyId(serviceKey.id);
       setToastMessage(`Syncing ${serviceName} via official API... please wait.`);
       setToastType('info');
-      const response = await fetch(`http://localhost:8000/api/keys/${serviceKey.id}/sync`, {
+      const response = await fetch(`/api/keys/${serviceKey.id}/sync`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -325,7 +360,7 @@ export default function SessionsManager({ token, platform }) {
   const handleDeleteOfficialKey = async (keyId) => {
     if (!window.confirm("Are you sure you want to remove this official API key from monitoring?")) return;
     try {
-      const response = await fetch(`http://localhost:8000/api/keys/${keyId}`, {
+      const response = await fetch(`/api/keys/${keyId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -339,7 +374,7 @@ export default function SessionsManager({ token, platform }) {
 
   const handleToggleMailTrigger = async (checked) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/sessions/mail-trigger/${activeTab}?enabled=${checked}`, {
+      const response = await fetch(`/api/sessions/mail-trigger/${activeTab}?enabled=${checked}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -355,22 +390,114 @@ export default function SessionsManager({ token, platform }) {
     }
   };
 
+  const getSyncButtonState = () => {
+    if (activeTab === 'elevenlabs') {
+      const isSessionActive = activeSessionData && (
+        activeSessionData.status === 'Connected' || 
+        activeSessionData.status === 'active' || 
+        activeSessionData.status === 'Active' || 
+        activeSessionData.status === 'ACTIVE'
+      );
+      const isSessionExpiringSoon = activeSessionData && (
+        activeSessionData.status === 'Expiring Soon' || 
+        activeSessionData.status === 'EXPIRING SOON'
+      );
+      
+      const officialKeyExists = officialKeys.some(
+        k => k.service_name?.toLowerCase() === 'elevenlabs'
+      );
+      
+      if (isSessionActive) {
+        return {
+          disabled: false,
+          text: "Sync Telemetry Now",
+          subtext: "Background session sync",
+          icon: <Zap size={14} className="group-hover:scale-110 transition-transform" />
+        };
+      } else if (isSessionExpiringSoon) {
+        return {
+          disabled: false,
+          text: "Sync Telemetry Now",
+          subtext: "Session expiring soon",
+          icon: <AlertTriangle size={14} className="text-amber-500 animate-pulse" />
+        };
+      } else if (officialKeyExists) {
+        return {
+          disabled: false,
+          text: "Sync Telemetry Now",
+          subtext: "Official API sync · instant",
+          icon: <Zap size={14} className="group-hover:scale-110 transition-transform" />
+        };
+      } else {
+        return {
+          disabled: true,
+          text: "Sync Telemetry Now",
+          subtext: "Session expired. Reconnect browser.",
+          icon: <Lock size={14} className="text-slate-400" />,
+          tooltip: "Session expired. Reconnect browser."
+        };
+      }
+    }
+    
+    const isDirectAPI = ['openai', 'twilio', 'convex'].includes(activeTab);
+    const requiresLogin = activeSessionData.status === 'unauthenticated' || 
+                          activeSessionData.status === 'Reconnect Required' || 
+                          activeSessionData.status === 'Expired' || 
+                          activeSessionData.status === 'expired' ||
+                          activeSessionData.status === 'EXPIRED';
+                          
+    return {
+      disabled: !!syncingKeyId || activeSessionData.status === 'authenticating',
+      text: "Sync Telemetry Now",
+      subtext: isDirectAPI 
+        ? 'Official API sync · instant' 
+        : requiresLogin
+        ? 'Requires login · headed popup' 
+        : 'Background session sync',
+      icon: <Zap size={14} className="group-hover:scale-110 transition-transform" />
+    };
+  };
+
   const handleSyncTelemetry = async () => {
-    const isDirectAPI = ['openai', 'render', 'twilio', 'convex', 'elevenlabs'].includes(activeTab);
+    if (activeTab === 'elevenlabs') {
+      const hasActiveSession = activeSessionData && (
+        activeSessionData.status === 'Connected' || 
+        activeSessionData.status === 'active' || 
+        activeSessionData.status === 'Active' || 
+        activeSessionData.status === 'ACTIVE' || 
+        activeSessionData.status === 'Expiring Soon' || 
+        activeSessionData.status === 'EXPIRING SOON'
+      );
+      
+      const officialKeyExists = officialKeys.some(
+        k => k.service_name?.toLowerCase() === 'elevenlabs'
+      );
+      
+      if (hasActiveSession) {
+        handleTriggerScrape('elevenlabs');
+      } else if (officialKeyExists) {
+        handleDirectApiSync('ElevenLabs');
+      } else {
+        setToastMessage("No active browser session found. Please reconnect.");
+        setToastType('error');
+      }
+      return;
+    }
+
+    const isDirectAPI = ['openai', 'twilio', 'convex'].includes(activeTab);
     
     if (isDirectAPI) {
       handleDirectApiSync(
         activeTab === 'openai' ? 'OpenAI'
-        : activeTab === 'render' ? 'Render'
         : activeTab === 'twilio' ? 'Twilio'
-        : activeTab === 'convex' ? 'Convex'
-        : 'ElevenLabs'
+        : 'Convex'
       );
     } else {
       if (activeSessionData.status === 'unauthenticated' || 
           activeSessionData.status === 'Reconnect Required' || 
           activeSessionData.status === 'Expired' || 
-          activeSessionData.status === 'expired') {
+          activeSessionData.status === 'expired' ||
+          activeSessionData.status === 'EXPIRED') {
         handleInteractiveLogin(activeTab);
       } else {
         handleTriggerScrape(activeTab);
@@ -473,6 +600,40 @@ export default function SessionsManager({ token, platform }) {
       return { totalUsage: 'NM', requestCount: 'NM', remainingBudget: 'NM', limitsUsd: 'NM' };
     }
     
+    if (activeTab === 'openai') {
+      let telemetrySpend = null;
+      let telemetryLimit = null;
+      
+      const addResources = selectedLog.extracted_data.additional_resources || {};
+      for (const [key, value] of Object.entries(addResources)) {
+        const k = key.trim().toLowerCase();
+        if (k === 'total spend (usd)' || k === 'total organization spend (usd)') {
+          const cleanVal = typeof value === 'string' ? value.replace('$', '').replace(/,/g, '').trim() : value;
+          const parsed = parseFloat(cleanVal);
+          if (!isNaN(parsed)) {
+            telemetrySpend = parsed;
+          }
+        }
+        if (k === 'usage limit' || k === 'current month usage limit') {
+          const cleanVal = typeof value === 'string' ? value.replace('$', '').replace(/,/g, '').trim() : value;
+          const parsed = parseFloat(cleanVal);
+          if (!isNaN(parsed)) {
+            telemetryLimit = parsed;
+          }
+        }
+      }
+
+      const totalSpend = telemetrySpend !== null ? telemetrySpend : (selectedLog.extracted_data.estimated_spend ?? selectedLog.extracted_data.usage_metrics?.total_usage_usd ?? 0);
+      const limitSpend = telemetryLimit !== null ? telemetryLimit : (selectedLog.extracted_data.usage_limit ?? selectedLog.extracted_data.usage_metrics?.limits_usd ?? 200.0);
+      const remaining = Math.max(0, limitSpend - totalSpend);
+      return {
+        totalUsage: totalSpend,
+        remainingBudget: remaining,
+        limitsUsd: limitSpend,
+        requestCount: 0
+      };
+    }
+    
     const logsList = selectedLog.extracted_data.scraped_logs || [];
     const limitDate = getDateFilterLimit(dateFilter);
     
@@ -482,8 +643,14 @@ export default function SessionsManager({ token, platform }) {
     });
     
     let totalUsage = 0;
+    let requestCount = 0;
     filteredLogs.forEach(log => {
-      totalUsage += getRequestCost(log.model, log.input_tokens || 0, log.output_tokens || 0);
+      if (typeof log.cost === 'number') {
+        totalUsage += log.cost;
+      } else {
+        totalUsage += getRequestCost(log.model, log.input_tokens || 0, log.output_tokens || 0);
+      }
+      requestCount += (log.num_requests !== undefined ? log.num_requests : 1);
     });
     
     const masterSpend = selectedLog.extracted_data.usage_metrics?.total_usage_usd;
@@ -493,7 +660,7 @@ export default function SessionsManager({ token, platform }) {
     
     return {
       totalUsage: finalSpend,
-      requestCount: filteredLogs.length,
+      requestCount: requestCount,
       remainingBudget: 'NM',
       limitsUsd: 'NM'
     };
@@ -668,6 +835,7 @@ export default function SessionsManager({ token, platform }) {
   };
 
   const isDarkMode = document.documentElement.classList.contains('dark');
+  const syncBtn = getSyncButtonState();
 
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-[#080B11] p-8 transition-colors duration-300">
@@ -707,7 +875,8 @@ export default function SessionsManager({ token, platform }) {
         </p>
       </div>
 
-      {/* Tabs list: REMOVED — navigation is now via the sidebar      {/* Clean Platform Info Banner */}
+      {/* Tabs list: REMOVED — navigation is now via the sidebar */}
+      {/* Clean Platform Info Banner */}
       <div className="glass-panel bg-white/90 dark:bg-dark-900/60 p-6 rounded-2xl border border-slate-200 dark:border-slate-800/80 mb-6 relative overflow-hidden shadow-sm">
         <div className="absolute top-0 right-0 w-32 h-32 bg-brand-indigo/5 rounded-full blur-[40px] pointer-events-none" />
         <div className="flex gap-4 items-center">
@@ -717,20 +886,20 @@ export default function SessionsManager({ token, platform }) {
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <strong className="text-slate-800 dark:text-white font-bold text-sm">
-                {['openai', 'render', 'twilio', 'convex'].includes(activeTab) 
+                {['openai', 'twilio', 'convex'].includes(activeTab) 
                   ? `${currentTabConfig.name} — Direct API Integration` 
                   : `${currentTabConfig.name} — Headless Browser Sync`}
               </strong>
               <span className={`px-2 py-0.5 text-[8px] font-extrabold rounded-full uppercase tracking-wide border ${
-                ['openai', 'render', 'twilio', 'convex'].includes(activeTab)
+                ['openai', 'twilio', 'convex'].includes(activeTab)
                   ? 'bg-brand-emerald/20 text-brand-emerald border-brand-emerald/30'
                   : 'bg-brand-cyan/20 text-brand-cyan border-brand-cyan/30'
               }`}>
-                {['openai', 'render', 'twilio', 'convex'].includes(activeTab) ? 'Official API' : 'Browser Session'}
+                {['openai', 'twilio', 'convex'].includes(activeTab) ? 'Official API' : 'Browser Session'}
               </span>
             </div>
             <p className="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">
-              {['openai', 'render', 'twilio', 'convex'].includes(activeTab)
+              {['openai', 'twilio', 'convex'].includes(activeTab)
                 ? `System environment keys are used to fetch real-time data securely. No browser login required.`
                 : `Interactive browser session cookies are used to securely bypass Cloudflare and fetch quota updates.`}
             </p>
@@ -747,11 +916,11 @@ export default function SessionsManager({ token, platform }) {
 
             <div className="flex justify-between items-start mb-6">
               <div>
-                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider font-sans">
-                  {activeTab === 'openai' || activeTab === 'render' ? 'Official API Sync Console' : 'Bot Controller Console'}
+                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-550 uppercase tracking-wider font-sans">
+                  {activeTab === 'openai' ? 'Official API Sync Console' : 'Bot Controller Console'}
                 </span>
                 <h3 className="text-xl font-bold text-slate-800 dark:text-white tracking-wide font-sans mt-1">
-                  {activeTab === 'openai' || activeTab === 'render' ? `${currentTabConfig.name} Direct Integration` : `${currentTabConfig.name} Browser Automation`}
+                  {activeTab === 'openai' ? `${currentTabConfig.name} Direct Integration` : `${currentTabConfig.name} Browser Automation`}
                 </h3>
               </div>
               
@@ -771,6 +940,55 @@ export default function SessionsManager({ token, platform }) {
                 Status: {activeSessionData.status}
               </span>
             </div>
+
+            {/* ElevenLabs Sync Progression Flow Badges */}
+            {activeTab === 'elevenlabs' && (activeSessionData.status === 'authenticating' || (activeSessionData.current_stage && activeSessionData.current_stage !== 'COMPLETED' && activeSessionData.current_stage !== 'FAILED')) && (
+              <div className="mb-6 p-5 bg-[#0E1524]/60 border border-slate-800 rounded-2xl">
+                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-3 font-sans">
+                  Sync Progression Flow
+                </span>
+                <div className="flex flex-wrap items-center gap-4 md:gap-6 font-sans">
+                  {[
+                    { key: 'BROWSER_OPENED', label: 'Browser Opened' },
+                    { key: 'USER_AUTHENTICATED', label: 'Logged In' },
+                    { key: 'API_KEYS_EXTRACTED', label: 'API Keys Extracted' },
+                    { key: 'SUBSCRIPTION_EXTRACTED', label: 'Subscription Extracted' },
+                    { key: 'DATA_SAVED', label: 'Data Saved' }
+                  ].map((badge, idx, arr) => {
+                    const isCompleted = activeSessionData.logs_feed?.some(
+                      log => log.stage === badge.key || (badge.key === 'DATA_SAVED' && log.stage === 'COMPLETED')
+                    );
+                    const isActive = activeSessionData.current_stage === badge.key;
+                    
+                    return (
+                      <React.Fragment key={badge.key}>
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2.5 h-2.5 rounded-full ${
+                            isCompleted 
+                              ? 'bg-brand-emerald shadow-[0_0_8px_rgba(16,185,129,0.5)]' 
+                              : isActive 
+                              ? 'bg-brand-cyan animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.5)]' 
+                              : 'bg-slate-700'
+                          }`} />
+                          <span className={`text-xs font-semibold ${
+                            isCompleted 
+                              ? 'text-brand-emerald font-bold' 
+                              : isActive 
+                              ? 'text-brand-cyan font-extrabold animate-pulse' 
+                              : 'text-slate-500'
+                          }`}>
+                            {badge.label}
+                          </span>
+                        </div>
+                        {idx < arr.length - 1 && (
+                          <ChevronRight size={12} className="text-slate-700 hidden sm:block" />
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Active Sync Progression Loader */}
             {activeSessionData.status === 'authenticating' && (
@@ -857,24 +1075,21 @@ export default function SessionsManager({ token, platform }) {
                 <button
                   type="button"
                   onClick={handleSyncTelemetry}
-                  disabled={!!syncingKeyId || activeSessionData.status === 'authenticating'}
+                  disabled={syncBtn.disabled || !!syncingKeyId || activeSessionData.status === 'authenticating'}
+                  title={syncBtn.tooltip || ""}
                   className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-brand-emerald to-teal-500 hover:from-brand-emerald/90 hover:to-teal-600 disabled:opacity-50 text-white rounded-xl text-xs font-extrabold transition-all shadow-lg hover:shadow-brand-emerald/15 group cursor-pointer"
                 >
-                  {syncingKeyId ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} className="group-hover:scale-110 transition-transform" />}
+                  {syncingKeyId ? <Loader2 size={14} className="animate-spin" /> : syncBtn.icon}
                   <div>
-                    <span className="block text-left leading-none">Sync Telemetry Now</span>
+                    <span className="block text-left leading-none">{syncBtn.text}</span>
                     <span className="text-[9.5px] text-white/70 font-medium mt-0.5 block text-left">
-                      {['openai', 'render', 'twilio', 'convex', 'elevenlabs'].includes(activeTab) 
-                        ? 'Official API sync · instant' 
-                        : (activeSessionData.status === 'unauthenticated' || activeSessionData.status === 'Reconnect Required' || activeSessionData.status === 'Expired' || activeSessionData.status === 'expired')
-                        ? 'Requires login · headed popup' 
-                        : 'Background session sync'}
+                      {syncBtn.subtext}
                     </span>
                   </div>
                 </button>
 
                 {/* Force Re-login for Browser Scrapers */}
-                {!['openai', 'render', 'twilio', 'convex'].includes(activeTab) && (
+                {!['openai', 'twilio', 'convex'].includes(activeTab) && (
                   <button
                     type="button"
                     onClick={() => handleInteractiveLogin(activeTab)}
@@ -975,15 +1190,26 @@ export default function SessionsManager({ token, platform }) {
 
                     {log.status === 'success' ? (
                       <div className="text-[11px] text-slate-650 dark:text-slate-400 space-y-1 font-mono">
-                        {log.service !== 'render' ? (
+                        {log.service === 'elevenlabs' ? (
+                          <>
+                            <div className="flex justify-between"><span>Plan:</span> <span className="text-slate-800 dark:text-white font-bold">{log.extracted_data?.plan_name || 'Free'}</span></div>
+                            <div className="flex justify-between"><span>Credits Used:</span> <span className="text-slate-800 dark:text-white font-bold">{(log.extracted_data?.used_credits || 0).toLocaleString()}</span></div>
+                            <div className="flex justify-between"><span>Remaining:</span> <span className="text-slate-800 dark:text-white font-bold">{(log.extracted_data?.remaining_credits ?? (log.extracted_data?.total_credits - log.extracted_data?.used_credits) ?? 0).toLocaleString()}</span></div>
+                            <div className="flex justify-between"><span>Exceeded:</span> <span className="text-slate-800 dark:text-white font-bold">{(log.extracted_data?.exceeded_credits || 0).toLocaleString()}</span></div>
+                            <div className="flex justify-between"><span>Scraped Keys:</span> <span className="text-slate-800 dark:text-white font-bold">{log.extracted_data?.scraped_keys ?? log.extracted_data?.api_keys_count ?? log.extracted_data?.api_key_count ?? 0}</span></div>
+                          </>
+                        ) : log.service !== 'render' ? (
                           <>
                             <div className="flex justify-between"><span>Scraped Keys:</span> <span className="text-slate-800 dark:text-white font-bold">{log.extracted_data?.api_keys_count || 0}</span></div>
-                            <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 truncate">Limits & billing synced.</div>
+                            <div className="text-[10px] text-slate-400 dark:text-slate-550 mt-1 truncate">Limits & billing synced.</div>
                           </>
                         ) : (
                           <>
-                            <div className="flex justify-between"><span>Services Found:</span> <span className="text-slate-800 dark:text-white font-bold">{log.extracted_data?.services?.length || 0}</span></div>
-                            <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 truncate">Auto-discovered targets updated.</div>
+                            <div className="flex justify-between"><span>Current Plan:</span> <span className="text-slate-800 dark:text-white font-bold">{log.extracted_data?.currentPlan || 'Hobby (legacy)'}</span></div>
+                            <div className="flex justify-between"><span>Credit Balance:</span> <span className="text-slate-800 dark:text-white font-bold">{formatUsd(log.extracted_data?.creditBalance)}</span></div>
+                            <div className="flex justify-between"><span>Invoices:</span> <span className="text-slate-800 dark:text-white font-bold">{log.extracted_data?.invoiceHistory?.length || 0}</span></div>
+                            <div className="flex justify-between"><span>Payment Status:</span> <span className={`font-bold ${log.extracted_data?.billingAlertActive ? 'text-brand-rose' : 'text-brand-emerald'}`}>{log.extracted_data?.billingAlertActive ? 'Payment Required' : 'All Paid'}</span></div>
+                            <div className="flex justify-between"><span>Included Usage:</span> <span className="text-slate-800 dark:text-white font-bold">{log.extracted_data?.includedUsage?.freeInstanceHours?.used || '0'}/{log.extracted_data?.includedUsage?.freeInstanceHours?.limit || '750'} hrs</span></div>
                           </>
                         )}
                       </div>
@@ -1048,119 +1274,301 @@ export default function SessionsManager({ token, platform }) {
             )}
 
             {/* Quick Metrics Grid */}
-            {activeTab !== 'render' ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            {activeTab === 'elevenlabs' ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6 mb-8 animate-fade-in font-sans">
+                {/* 1. Current Plan */}
+                <div className="bg-slate-50/50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/60 rounded-xl p-5 shadow-sm hover:scale-[1.02] transition-transform">
+                  <span className="text-[10px] font-bold text-slate-450 dark:text-slate-500 uppercase tracking-wider block font-sans">Current Plan</span>
+                  <p className="text-2xl font-extrabold text-brand-indigo mt-1.5 font-sans truncate">
+                    {selectedLog.extracted_data.plan_name || 'Free'}
+                  </p>
+                  <span className="text-[10px] text-slate-400 dark:text-slate-550 mt-1 block font-semibold">Active subscription level</span>
+                </div>
+
+                {/* 2. Credit Limit */}
+                <div className="bg-slate-50/50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/60 rounded-xl p-5 shadow-sm hover:scale-[1.02] transition-transform">
+                  <span className="text-[10px] font-bold text-slate-455 dark:text-slate-500 uppercase tracking-wider block font-sans">Credit Limit</span>
+                  <p className="text-2xl font-extrabold text-slate-800 dark:text-white mt-1.5 font-sans">
+                    {(selectedLog.extracted_data.total_credits || 0).toLocaleString()}
+                  </p>
+                  <span className="text-[10px] text-slate-450 dark:text-slate-550 mt-1 block font-semibold">Total monthly characters</span>
+                </div>
+
+                {/* 3. Used Credits */}
+                <div className="bg-slate-50/50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/60 rounded-xl p-5 shadow-sm hover:scale-[1.02] transition-transform">
+                  <span className="text-[10px] font-bold text-slate-455 dark:text-slate-500 uppercase tracking-wider block">Used Credits</span>
+                  <p className="text-2xl font-extrabold text-brand-rose mt-1.5 font-sans font-mono">
+                    {(selectedLog.extracted_data.used_credits || 0).toLocaleString()}
+                  </p>
+                  <span className="text-[10px] text-slate-440 dark:text-slate-550 mt-1 block font-semibold">Characters consumed</span>
+                </div>
+
+                {/* 4. Remaining Credits */}
+                <div className="bg-slate-50/50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/60 rounded-xl p-5 shadow-sm hover:scale-[1.02] transition-transform">
+                  <span className="text-[10px] font-bold text-slate-455 dark:text-slate-500 uppercase tracking-wider block">Remaining Credits</span>
+                  <p className="text-2xl font-extrabold text-brand-emerald mt-1.5 font-sans font-mono">
+                    {(selectedLog.extracted_data.remaining_credits ?? (selectedLog.extracted_data.total_credits - selectedLog.extracted_data.used_credits) ?? 0).toLocaleString()}
+                  </p>
+                  <span className="text-[10px] text-slate-440 dark:text-slate-550 mt-1 block font-semibold">Available characters</span>
+                </div>
+
+                {/* 5. Overused Credits */}
+                <div className="bg-slate-50/50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/60 rounded-xl p-5 shadow-sm hover:scale-[1.02] transition-transform">
+                  <span className="text-[10px] font-bold text-slate-455 dark:text-slate-500 uppercase tracking-wider block">Overused Credits</span>
+                  <p className={`text-2xl font-extrabold mt-1.5 font-sans font-mono ${selectedLog.extracted_data.overused_credits > 0 ? 'text-red-500 font-bold' : 'text-slate-500 dark:text-slate-400'}`}>
+                    {(selectedLog.extracted_data.overused_credits || 0).toLocaleString()}
+                  </p>
+                  <span className="text-[10px] text-slate-440 dark:text-slate-550 mt-1 block font-semibold">Exceeded quota count</span>
+                </div>
+
+                {/* 6. Billing Status */}
+                <div className="bg-slate-50/50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/60 rounded-xl p-5 shadow-sm hover:scale-[1.02] transition-transform">
+                  <span className="text-[10px] font-bold text-slate-455 dark:text-slate-500 uppercase tracking-wider block">Billing Status</span>
+                  <div className="mt-2.5">
+                    <span className={`px-2.5 py-1 rounded text-xs font-bold uppercase tracking-wider border ${
+                      selectedLog.extracted_data.billing_status === 'NORMAL'
+                        ? 'bg-brand-emerald/10 border-brand-emerald/20 text-brand-emerald'
+                        : selectedLog.extracted_data.billing_status === 'WARNING'
+                        ? 'bg-amber-500/10 border-amber-500/20 text-amber-500'
+                        : 'bg-brand-rose/10 border-brand-rose/20 text-brand-rose animate-pulse'
+                    }`}>
+                      {selectedLog.extracted_data.billing_status || 'NORMAL'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-440 dark:text-slate-550 mt-2 block font-semibold">Usage alert classification</span>
+                </div>
+              </div>
+            ) : activeTab === 'render' ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-8 animate-fade-in font-sans">
+                <div className="bg-slate-50/50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/60 rounded-xl p-5 shadow-sm hover:scale-[1.02] transition-transform">
+                  <span className="text-[10px] font-bold text-slate-450 dark:text-slate-500 uppercase tracking-wider block font-sans">Current Plan</span>
+                  <p className="text-2xl font-extrabold text-brand-indigo mt-1.5 font-sans truncate">
+                    {selectedLog.extracted_data.currentPlan || 'Hobby (legacy)'}
+                  </p>
+                  <span className="text-[10px] text-slate-400 dark:text-slate-550 mt-1 block font-semibold">Active subscription level</span>
+                </div>
+
+                <div className="bg-slate-50/50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/60 rounded-xl p-5 shadow-sm hover:scale-[1.02] transition-transform">
+                  <span className="text-[10px] font-bold text-slate-455 dark:text-slate-550 uppercase tracking-wider block">Credit Balance</span>
+                  <p className="text-2xl font-extrabold text-brand-rose mt-1.5 font-sans font-mono">
+                    {formatUsd(selectedLog.extracted_data.creditBalance)}
+                  </p>
+                  <span className="text-[10px] text-slate-440 dark:text-slate-550 mt-1 block font-semibold">Available credit</span>
+                </div>
+
+                <div className="bg-slate-50/50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/60 rounded-xl p-5 shadow-sm hover:scale-[1.02] transition-transform">
+                  <span className="text-[10px] font-bold text-slate-455 dark:text-slate-550 uppercase tracking-wider block">Free Instance Hours</span>
+                  <p className="text-2xl font-extrabold text-slate-800 dark:text-white mt-1.5 font-sans">
+                    {selectedLog.extracted_data.includedUsage?.freeInstanceHours?.used || "0"} / {selectedLog.extracted_data.includedUsage?.freeInstanceHours?.limit || "750"} hrs
+                  </p>
+                  <span className="text-[10px] text-slate-440 dark:text-slate-550 mt-1 block font-semibold">Used / Limit</span>
+                </div>
+
+                <div className="bg-slate-50/50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/60 rounded-xl p-5 shadow-sm hover:scale-[1.02] transition-transform">
+                  <span className="text-[10px] font-bold text-slate-455 dark:text-slate-550 uppercase tracking-wider block">Pipeline Minutes</span>
+                  <p className="text-2xl font-extrabold text-brand-cyan mt-1.5 font-sans">
+                    {selectedLog.extracted_data.includedUsage?.pipelineMinutes?.used || "0"} / {selectedLog.extracted_data.includedUsage?.pipelineMinutes?.limit || "500"} min
+                  </p>
+                  <span className="text-[10px] text-slate-440 dark:text-slate-550 mt-1 block font-semibold">Used / Limit</span>
+                </div>
+
+                <div className="bg-slate-50/50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/60 rounded-xl p-5 shadow-sm hover:scale-[1.02] transition-transform">
+                  <span className="text-[10px] font-bold text-slate-455 dark:text-slate-550 uppercase tracking-wider block">Bandwidth Usage</span>
+                  <p className="text-2xl font-extrabold text-brand-emerald mt-1.5 font-sans">
+                    {selectedLog.extracted_data.includedUsage?.bandwidth?.used || "0 MB"} / {selectedLog.extracted_data.includedUsage?.bandwidth?.limit || "100 GB"}
+                  </p>
+                  <span className="text-[10px] text-slate-440 dark:text-slate-550 mt-1 block font-semibold">Used / Limit</span>
+                </div>
+              </div>
+            ) : activeTab !== 'render' ? (
+              <div className={`grid grid-cols-1 sm:grid-cols-2 ${activeTab === 'groq' ? 'lg:grid-cols-2 max-w-2xl' : 'lg:grid-cols-4'} gap-6 mb-8`}>
                 <div className="bg-slate-50/50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/60 rounded-xl p-5 shadow-sm">
-                  <span className="text-[10px] font-bold text-slate-450 dark:text-slate-500 uppercase tracking-wider block font-sans">Active Keys</span>
+                  <span className="text-[10px] font-bold text-slate-450 dark:text-slate-550 uppercase tracking-wider block font-sans">Active Keys</span>
                   <p className="text-3xl font-extrabold text-slate-800 dark:text-white mt-1.5 font-sans">
-                    {selectedLog.extracted_data.api_keys_count || 0}
+                    {selectedLog.extracted_data.api_keys_count ?? selectedLog.extracted_data.active_keys ?? 0}
                   </p>
                   <span className="text-[10px] text-brand-emerald font-semibold mt-1 block">Successfully verified on console</span>
                 </div>
 
                 <div className="bg-slate-50/50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/60 rounded-xl p-5 shadow-sm">
-                  <span className="text-[10px] font-bold text-slate-450 dark:text-slate-500 uppercase tracking-wider block">Estimated Spend</span>
+                  <span className="text-[10px] font-bold text-slate-450 dark:text-slate-550 uppercase tracking-wider block font-sans">Estimated Spend</span>
                   <p className="text-3xl font-extrabold text-brand-rose mt-1.5 font-sans">
                     {formatUsd(filteredMetrics.totalUsage)}
                   </p>
-                  <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 block">Selected range cost estimate</span>
+                  <span className="text-[10px] text-slate-455 dark:text-slate-550 mt-1 block">
+                    {activeTab === 'openai' ? 'Source: Total Spend (USD)' : 'Selected range cost estimate'}
+                  </span>
                 </div>
 
-                <div className="bg-slate-50/50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/60 rounded-xl p-5 shadow-sm">
-                  <span className="text-[10px] font-bold text-slate-450 dark:text-slate-500 uppercase tracking-wider block">Remaining Budget</span>
-                  <p className="text-3xl font-extrabold text-brand-emerald mt-1.5 font-sans">
-                    {formatUsd(filteredMetrics.remainingBudget)}
-                  </p>
-                  <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 block">Out of {formatUsd(filteredMetrics.limitsUsd)} cap</span>
-                </div>
+                {activeTab === 'openai' && (
+                  <>
+                    <div className="bg-slate-50/50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/60 rounded-xl p-5 shadow-sm">
+                      <span className="text-[10px] font-bold text-slate-455 dark:text-slate-550 uppercase tracking-wider block font-sans">Usage Limit</span>
+                      <p className="text-3xl font-extrabold text-slate-800 dark:text-white mt-1.5 font-sans">
+                        {formatUsd(filteredMetrics.limitsUsd)}
+                      </p>
+                      <span className="text-[10px] text-slate-450 dark:text-slate-550 mt-1 block font-semibold">Source: Usage Limit</span>
+                    </div>
 
-                <div className="bg-slate-50/50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/60 rounded-xl p-5 shadow-sm">
-                  <span className="text-[10px] font-bold text-slate-455 dark:text-slate-500 uppercase tracking-wider block">Usage Request Calls</span>
-                  <p className="text-3xl font-extrabold text-brand-cyan mt-1.5 font-sans">
-                    {formatCount(filteredMetrics.requestCount)}
-                  </p>
-                  <span className="text-[10px] text-slate-450 dark:text-slate-500 mt-1 block">Telemetry token/request total</span>
-                </div>
+                    <div className="bg-slate-50/50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/60 rounded-xl p-5 shadow-sm">
+                      <span className="text-[10px] font-bold text-slate-455 dark:text-slate-500 uppercase tracking-wider block font-sans">Remaining Budget</span>
+                      <p className="text-3xl font-extrabold text-brand-emerald mt-1.5 font-sans">
+                        {formatUsd(filteredMetrics.remainingBudget)}
+                      </p>
+                      <span className="text-[10px] text-slate-450 dark:text-slate-550 mt-1 block font-semibold">Formula: Usage Limit - Total Spend</span>
+                    </div>
+                  </>
+                )}
+
+                {activeTab !== 'groq' && activeTab !== 'openai' && (
+                  <>
+                    <div className="bg-slate-50/50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/60 rounded-xl p-5 shadow-sm">
+                      <span className="text-[10px] font-bold text-slate-450 dark:text-slate-550 uppercase tracking-wider block font-sans">Remaining Budget</span>
+                      <p className="text-3xl font-extrabold text-brand-emerald mt-1.5 font-sans">
+                        {formatUsd(filteredMetrics.remainingBudget)}
+                      </p>
+                      <span className="text-[10px] text-slate-450 dark:text-slate-550 mt-1 block">Out of {formatUsd(filteredMetrics.limitsUsd)} cap</span>
+                    </div>
+
+                    <div className="bg-slate-50/50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/60 rounded-xl p-5 shadow-sm">
+                      <span className="text-[10px] font-bold text-slate-455 dark:text-slate-550 uppercase tracking-wider block">Usage Request Calls</span>
+                      <p className="text-3xl font-extrabold text-brand-cyan mt-1.5 font-sans">
+                        {formatCount(filteredMetrics.requestCount)}
+                      </p>
+                      <span className="text-[10px] text-slate-450 dark:text-slate-550 mt-1 block">Telemetry token/request total</span>
+                    </div>
+                  </>
+                )}
               </div>
             ) : null}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               {/* Extracted Keys / Services Table */}
-              <div className="lg:col-span-2 space-y-4">
+              <div className={`${activeTab === 'elevenlabs' ? 'lg:col-span-3' : 'lg:col-span-2'} space-y-4`}>
                 <span className="text-[10px] font-bold text-slate-400 dark:text-slate-550 uppercase tracking-wider block mb-2 font-sans">
-                  {activeTab !== 'render' 
+                  {activeTab === 'elevenlabs'
+                    ? `API Keys List (${selectedLog.extracted_data.api_keys?.length || 0})`
+                    : activeTab !== 'render' 
                     ? `Scraped API Keys List (${selectedLog.extracted_data.api_keys_count || 0})` 
                     : `Discovered Services List (${selectedLog.extracted_data.services?.length || 0})`}
                 </span>
                 
                 
-                <div className="border border-slate-200 dark:border-dark-850 bg-slate-50/20 dark:bg-dark-900/40 rounded-xl overflow-hidden shadow-inner">
+                <div className="border border-slate-200 dark:border-dark-850 bg-slate-50/20 dark:bg-dark-900/40 rounded-xl overflow-hidden shadow-inner font-sans">
                   {activeTab !== 'render' ? (
                     <table className="w-full border-collapse text-left font-mono text-xs">
                       <thead>
                         <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/50 dark:bg-[#0E1524]/80 text-[10px] font-bold text-slate-450 dark:text-slate-400 uppercase tracking-wider">
-                          <th className="p-4">Key Label</th>
-                          <th className="p-4">Created At</th>
-                          <th className="p-4">Last Used</th>
-                          <th className="p-4">Expires</th>
-                          <th className="p-4">Usage (24Hrs)</th>
-                          <th className="p-4 text-center">Status</th>
+                          {activeTab === 'elevenlabs' ? (
+                            <>
+                              <th className="p-4">Name</th>
+                              <th className="p-4">Key Identifier</th>
+                              <th className="p-4">Created</th>
+                              <th className="p-4 text-center">Enabled</th>
+                            </>
+                          ) : (
+                            <>
+                              <th className="p-4">Key Label</th>
+                              <th className="p-4">Created At</th>
+                              <th className="p-4">Last Used</th>
+                              <th className="p-4">Expires</th>
+                              <th className="p-4">Usage (24Hrs)</th>
+                              <th className="p-4 text-center">Status</th>
+                            </>
+                          )}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-dark-800/50">
-                        {selectedLog.extracted_data.keys_list && selectedLog.extracted_data.keys_list.length > 0 ? (
-                          selectedLog.extracted_data.keys_list.map((key, idx) => (
-                            <tr key={key.id || idx} className="hover:bg-slate-100/50 dark:hover:bg-dark-800/40 text-slate-600 dark:text-slate-300 font-mono transition-colors">
-                              <td className="p-4 text-slate-800 dark:text-white font-sans font-bold">{key.name || 'API-Key'}</td>
-                              <td className="p-4 text-slate-450 dark:text-slate-400">{key.created_at || 'NM'}</td>
-                              <td className="p-4 text-slate-455 dark:text-slate-400">{key.last_used_at || 'Never'}</td>
-                              <td className="p-4 text-slate-455 dark:text-slate-400">{key.expires || 'NM'}</td>
-                              <td className="p-4 text-slate-455 dark:text-slate-400">{key.usage_24h || 'NM'}</td>
-                              <td className="p-4 text-center">
-                                <span className="px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-dark-850 text-slate-455 dark:text-slate-400 border border-slate-200 dark:border-slate-800">
-                                  {key.status || 'NM'}
-                                </span>
+                        {activeTab === 'elevenlabs' ? (
+                          selectedLog.extracted_data.api_keys && selectedLog.extracted_data.api_keys.length > 0 ? (
+                            selectedLog.extracted_data.api_keys.map((key, idx) => (
+                              <tr key={idx} className="hover:bg-slate-100/50 dark:hover:bg-dark-800/40 text-slate-600 dark:text-slate-300 font-mono transition-colors">
+                                <td className="p-4 text-slate-800 dark:text-white font-sans font-bold">{key.name || 'API-Key'}</td>
+                                <td className="p-4 text-slate-500 font-mono tracking-wider">{key.key_id || 'NM'}</td>
+                                <td className="p-4 text-slate-450 dark:text-slate-400">{key.created_at || 'NM'}</td>
+                                <td className="p-4 text-center">
+                                  <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${
+                                    key.status === 'Enabled'
+                                      ? 'bg-brand-emerald/10 border-brand-emerald/20 text-brand-emerald'
+                                      : 'bg-brand-rose/10 border-brand-rose/20 text-brand-rose'
+                                  }`}>
+                                    {key.status || 'Enabled'}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={4} className="p-8 text-center text-slate-450 dark:text-slate-500 italic font-sans">
+                                No API keys extracted in this run.
                               </td>
                             </tr>
-                          ))
+                          )
                         ) : (
-                          <tr>
-                            <td colSpan={6} className="p-8 text-center text-slate-400 dark:text-slate-500 italic font-sans">
-                              No scraped keys extracted in this run.
-                            </td>
-                          </tr>
+                          selectedLog.extracted_data.keys_list && selectedLog.extracted_data.keys_list.length > 0 ? (
+                            selectedLog.extracted_data.keys_list.map((key, idx) => (
+                              <tr key={key.id || idx} className="hover:bg-slate-100/50 dark:hover:bg-dark-800/40 text-slate-600 dark:text-slate-300 font-mono transition-colors">
+                                <td className="p-4 text-slate-800 dark:text-white font-sans font-bold">{key.name || 'API-Key'}</td>
+                                <td className="p-4 text-slate-450 dark:text-slate-400">{key.created_at || 'NM'}</td>
+                                <td className="p-4 text-slate-455 dark:text-slate-400">{key.last_used_at || 'Never'}</td>
+                                <td className="p-4 text-slate-455 dark:text-slate-400">{key.expires || 'NM'}</td>
+                                <td className="p-4 text-slate-455 dark:text-slate-400">{key.usage_24h || 'NM'}</td>
+                                <td className="p-4 text-center">
+                                  <span className="px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-dark-850 text-slate-455 dark:text-slate-400 border border-slate-200 dark:border-slate-800">
+                                    {key.status || 'NM'}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={6} className="p-8 text-center text-slate-400 dark:text-slate-550 italic font-sans">
+                                No scraped keys extracted in this run.
+                              </td>
+                            </tr>
+                          )
                         )}
                       </tbody>
                     </table>
                   ) : (
                     <table className="w-full border-collapse text-left font-mono text-xs">
                       <thead>
-                        <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/50 dark:bg-[#0E1524]/80 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/50 dark:bg-[#0E1524]/80 text-[10px] font-bold text-slate-450 dark:text-slate-400 uppercase tracking-wider">
                           <th className="p-4">Service Name</th>
                           <th className="p-4">Endpoint URL</th>
+                          <th className="p-4 text-center">Runtime</th>
+                          <th className="p-4 text-center">Region</th>
+                          <th className="p-4 text-center">Updated</th>
                           <th className="p-4 text-center">Deployment Status</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-dark-800/50">
                         {selectedLog.extracted_data.services && selectedLog.extracted_data.services.length > 0 ? (
-                          selectedLog.extracted_data.services.map((svc, idx) => (
-                            <tr key={idx} className="hover:bg-slate-100/50 dark:hover:bg-dark-800/40 text-slate-600 dark:text-slate-300 font-mono transition-colors">
-                              <td className="p-4 text-slate-800 dark:text-white font-sans font-bold">{svc.name}</td>
-                              <td className="p-4 text-brand-cyan truncate max-w-[200px]"><a href={svc.service_url} target="_blank" rel="noreferrer" className="hover:underline">{svc.service_url}</a></td>
-                              <td className="p-4 text-center">
-                                <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border ${
-                                  svc.status?.toLowerCase() === 'live' 
-                                    ? 'bg-brand-emerald/10 border-brand-emerald/20 text-brand-emerald' 
-                                    : 'bg-brand-rose/10 border-brand-rose/20 text-brand-rose'
-                                }`}>
-                                  {svc.status || 'Unknown'}
-                                </span>
-                              </td>
-                            </tr>
-                          ))
+                          selectedLog.extracted_data.services.map((svc, idx) => {
+                            const statusLower = svc.status?.toLowerCase();
+                            const isGreen = statusLower === 'live' || statusLower === 'deployed';
+                            return (
+                              <tr key={idx} className="hover:bg-slate-100/50 dark:hover:bg-dark-800/40 text-slate-600 dark:text-slate-300 font-mono transition-colors">
+                                <td className="p-4 text-slate-800 dark:text-white font-sans font-bold">{svc.name || svc.serviceName || 'Unknown'}</td>
+                                <td className="p-4 text-brand-cyan truncate max-w-[200px]"><a href={svc.service_url} target="_blank" rel="noreferrer" className="hover:underline">{svc.service_url}</a></td>
+                                <td className="p-4 text-center text-slate-700 dark:text-slate-300 font-sans">{svc.runtime || 'Unknown'}</td>
+                                <td className="p-4 text-center text-slate-700 dark:text-slate-300 font-sans">{svc.region || 'Unknown'}</td>
+                                <td className="p-4 text-center text-slate-700 dark:text-slate-300 font-sans">{svc.updated || 'Unknown'}</td>
+                                <td className="p-4 text-center">
+                                  <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border ${
+                                    isGreen 
+                                      ? 'bg-brand-emerald/10 border-brand-emerald/20 text-brand-emerald' 
+                                      : 'bg-brand-rose/10 border-brand-rose/20 text-brand-rose'
+                                  }`}>
+                                    {svc.status || 'Unknown'}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })
                         ) : (
                           <tr>
-                            <td colSpan={3} className="p-8 text-center text-slate-500 italic font-sans">
+                            <td colSpan={6} className="p-8 text-center text-slate-555 italic font-sans">
                               No services discovered in this run.
                             </td>
                           </tr>
@@ -1170,9 +1578,42 @@ export default function SessionsManager({ token, platform }) {
                   )}
                 </div>
 
-                {selectedLog.extracted_data.additional_resources && typeof selectedLog.extracted_data.additional_resources === 'object' && Object.keys(selectedLog.extracted_data.additional_resources).length > 0 && (
+                {activeTab === 'render' && (
                   <div className="mt-6 space-y-3">
-                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-550 uppercase tracking-wider block font-sans">
+                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-555 uppercase tracking-wider block font-sans">
+                      RENDER BILLING TELEMETRY
+                    </span>
+                    <div className="border border-slate-200 dark:border-dark-800 bg-slate-50/20 dark:bg-dark-900/40 rounded-xl p-5 shadow-sm font-sans">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {[
+                          { label: "Current Plan", value: selectedLog.extracted_data.currentPlan || "Hobby (legacy)" },
+                          { label: "Credit Balance", value: formatUsd(selectedLog.extracted_data.creditBalance) },
+                          { label: "Free Instance Hours Used", value: selectedLog.extracted_data.includedUsage?.freeInstanceHours?.used || "0" },
+                          { label: "Free Instance Hours Limit", value: selectedLog.extracted_data.includedUsage?.freeInstanceHours?.limit || "750" },
+                          { label: "Pipeline Minutes Used", value: selectedLog.extracted_data.includedUsage?.pipelineMinutes?.used || "0" },
+                          { label: "Pipeline Minutes Limit", value: selectedLog.extracted_data.includedUsage?.pipelineMinutes?.limit || "500" },
+                          { label: "Bandwidth Used", value: selectedLog.extracted_data.includedUsage?.bandwidth?.used || "0 MB" },
+                          { label: "Bandwidth Limit", value: selectedLog.extracted_data.includedUsage?.bandwidth?.limit || "100 GB" },
+                          { label: "Invoices Extracted", value: selectedLog.extracted_data.invoiceHistory?.length || "0" },
+                          { label: "Last Billing Sync Time", value: selectedLog.scraped_at ? new Date(selectedLog.scraped_at).toLocaleString() : "N/A" }
+                        ].map((item) => (
+                          <div key={item.label} className="flex flex-col pb-2 border-b border-slate-100 dark:border-slate-800 last:border-b-0 md:last:border-b-0 border-dashed">
+                            <span className="text-[10px] text-slate-400 dark:text-slate-555 uppercase tracking-wider font-semibold">
+                              {item.label}
+                            </span>
+                            <span className="text-xs font-bold text-slate-850 dark:text-white mt-1 break-all">
+                              {item.value}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeTab !== 'elevenlabs' && activeTab !== 'render' && selectedLog.extracted_data.additional_resources && typeof selectedLog.extracted_data.additional_resources === 'object' && Object.keys(selectedLog.extracted_data.additional_resources).length > 0 && (
+                  <div className="mt-6 space-y-3">
+                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-555 uppercase tracking-wider block font-sans">
                       Platform Resource Telemetry
                     </span>
                     <div className="border border-slate-200 dark:border-dark-800 bg-slate-50/20 dark:bg-dark-900/40 rounded-xl p-5 shadow-sm">
@@ -1181,10 +1622,10 @@ export default function SessionsManager({ token, platform }) {
                           const isUrl = typeof value === 'string' && (value.startsWith('http://') || value.startsWith('https://'));
                           return (
                             <div key={label} className="flex flex-col pb-2 border-b border-slate-100 dark:border-slate-800 last:border-b-0 md:last:border-b border-dashed">
-                              <span className="text-[10px] text-slate-400 dark:text-slate-550 uppercase tracking-wider font-semibold font-sans">
+                              <span className="text-[10px] text-slate-400 dark:text-slate-555 uppercase tracking-wider font-semibold font-sans">
                                 {label}
                               </span>
-                              <span className="text-xs font-bold text-slate-850 dark:text-white mt-1 break-all">
+                              <span className="text-xs font-bold text-slate-850 dark:text-white mt-1 break-all font-sans">
                                 {isUrl ? (
                                   <a href={value} target="_blank" rel="noopener noreferrer" className="text-brand-cyan hover:underline transition-all flex items-center gap-1 font-mono">
                                     {value}
@@ -1203,40 +1644,92 @@ export default function SessionsManager({ token, platform }) {
               </div>
 
               {/* Quotas & Rate Limits Breakdown */}
-              <div className="space-y-4">
-                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-550 uppercase tracking-wider block mb-2 font-sans">
-                  Scraped Limits (TPM / RPM)
-                </span>
+              {activeTab !== 'elevenlabs' && activeTab !== 'render' && (
+                <div className="space-y-4">
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-555 uppercase tracking-wider block mb-2 font-sans">
+                    Scraped Limits (TPM / RPM)
+                  </span>
 
-                <div className="bg-slate-50/50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/60 rounded-xl p-5 space-y-4 shadow-sm">
-                  {selectedLog.extracted_data.limits && typeof selectedLog.extracted_data.limits === 'object' && Object.keys(selectedLog.extracted_data.limits).length > 0 ? (
-                    Object.entries(selectedLog.extracted_data.limits).map(([model, spec]) => (
-                      <div key={model} className="pb-3 border-b border-slate-200 dark:border-dark-850 last:border-b-0 last:pb-0 font-sans">
-                        <div className="flex justify-between items-center mb-1.5">
-                          <span className="text-xs font-bold text-slate-800 dark:text-white font-sans truncate pr-2" title={model}>{model}</span>
-                          <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-brand-indigo/10 border border-brand-indigo/20 text-brand-indigo uppercase shrink-0">
-                            Verified
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4 font-mono text-[10px] text-slate-455 dark:text-slate-400">
-                          <div>
-                            <span className="text-slate-400 dark:text-slate-500 text-[9px] uppercase tracking-wider block">Token Limit</span>
-                            <span className="text-brand-cyan font-bold">{(spec?.tpm || 0).toLocaleString()} TPM</span>
+                  <div className="bg-slate-50/50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/60 rounded-xl p-5 space-y-4 shadow-sm">
+                    {selectedLog.extracted_data.limits && typeof selectedLog.extracted_data.limits === 'object' && Object.keys(selectedLog.extracted_data.limits).length > 0 ? (
+                      Object.entries(selectedLog.extracted_data.limits).map(([model, spec]) => (
+                        <div key={model} className="pb-3 border-b border-slate-200 dark:border-dark-850 last:border-b-0 last:pb-0 font-sans">
+                          <div className="flex justify-between items-center mb-1.5">
+                            <span className="text-xs font-bold text-slate-800 dark:text-white font-sans truncate pr-2" title={model}>{model}</span>
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-brand-indigo/10 border border-brand-indigo/20 text-brand-indigo uppercase shrink-0">
+                              Verified
+                            </span>
                           </div>
-                          <div>
-                            <span className="text-slate-400 dark:text-slate-500 text-[9px] uppercase tracking-wider block">Request Limit</span>
-                            <span className="text-brand-purple font-bold">{(spec?.rpm || 0).toLocaleString()} RPM</span>
+                          <div className="grid grid-cols-2 gap-4 font-mono text-[10px] text-slate-455 dark:text-slate-400">
+                            <div>
+                              <span className="text-slate-400 dark:text-slate-550 text-[9px] uppercase tracking-wider block">Token Limit</span>
+                              <span className="text-brand-cyan font-bold">{(spec?.tpm || 0).toLocaleString()} TPM</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 dark:text-slate-550 text-[9px] uppercase tracking-wider block">Request Limit</span>
+                              <span className="text-brand-purple font-bold">{(spec?.rpm || 0).toLocaleString()} RPM</span>
+                            </div>
                           </div>
                         </div>
+                      ))
+                    ) : (
+                      <div className="text-xs text-slate-400 dark:text-slate-550 italic p-4 text-center font-sans">
+                        No limits details parsed in this run.
                       </div>
-                    ))
-                  ) : (
-                    <div className="text-xs text-slate-400 dark:text-slate-550 italic p-4 text-center font-sans">
-                      No limits details parsed in this run.
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Render Invoice History Sidebar */}
+              {activeTab === 'render' && (
+                <div className="space-y-4 font-sans animate-fade-in">
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-555 uppercase tracking-wider block mb-2">
+                    Invoice History
+                  </span>
+                  
+                  {selectedLog.extracted_data.billingAlertActive && (
+                    <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-500 font-bold flex items-center gap-2 animate-pulse">
+                      <span>🚨 Billing Alert Active - Payment Required</span>
                     </div>
                   )}
+
+                  <div className="border border-slate-200 dark:border-dark-850 bg-slate-50/20 dark:bg-dark-900/40 rounded-xl overflow-hidden shadow-inner">
+                    <table className="w-full border-collapse text-left font-mono text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/50 dark:bg-[#0E1524]/80 text-[10px] font-bold text-slate-450 dark:text-slate-400 uppercase tracking-wider">
+                          <th className="p-3">Month</th>
+                          <th className="p-3">Status</th>
+                          <th className="p-3 text-right">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-dark-800/50">
+                        {selectedLog.extracted_data.invoiceHistory && selectedLog.extracted_data.invoiceHistory.length > 0 ? (
+                          selectedLog.extracted_data.invoiceHistory.map((inv, idx) => (
+                            <tr key={idx} className="hover:bg-slate-100/50 dark:hover:bg-dark-800/40 text-slate-600 dark:text-slate-300 font-mono transition-colors">
+                              <td className="p-3 text-slate-800 dark:text-white font-sans font-bold">{inv.month}</td>
+                              <td className="p-3">
+                                <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border ${
+                                  inv.status?.toLowerCase() === 'paid'
+                                    ? 'bg-brand-emerald/10 border-brand-emerald/20 text-brand-emerald'
+                                    : 'bg-brand-rose/10 border-brand-rose/20 text-brand-rose animate-pulse'
+                                }`}>
+                                  {inv.status}
+                                </span>
+                              </td>
+                              <td className="p-3 text-right font-bold text-slate-800 dark:text-white">{inv.total}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={3} className="p-4 text-center text-slate-400 italic font-sans">No invoice history found.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         ) : (

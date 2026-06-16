@@ -47,7 +47,7 @@ export default function KeysManager({ token }) {
   const fetchKeys = async () => {
     try {
       setLoading(true);
-      const url = new URL('http://localhost:8000/api/keys');
+      const url = new URL('/api/keys', window.location.origin);
       if (searchQuery) url.searchParams.append('search', searchQuery);
       if (statusFilter) url.searchParams.append('status_filter', statusFilter);
 
@@ -73,7 +73,7 @@ export default function KeysManager({ token }) {
     setFormLoading(true);
 
     try {
-      const response = await fetch('http://localhost:8000/api/keys', {
+      const response = await fetch('/api/keys', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -111,7 +111,7 @@ export default function KeysManager({ token }) {
 
   const handleToggleActive = async (keyId, currentEnabled) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/keys/${keyId}`, {
+      const response = await fetch(`/api/keys/${keyId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -130,7 +130,7 @@ export default function KeysManager({ token }) {
   const handleDeleteKey = async (keyId) => {
     if (!window.confirm("Are you sure you want to remove this API key from monitoring?")) return;
     try {
-      const response = await fetch(`http://localhost:8000/api/keys/${keyId}`, {
+      const response = await fetch(`/api/keys/${keyId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -145,7 +145,7 @@ export default function KeysManager({ token }) {
   const handleSyncKey = async (keyId) => {
     try {
       setSyncingId(keyId);
-      const response = await fetch(`http://localhost:8000/api/keys/${keyId}/sync`, {
+      const response = await fetch(`/api/keys/${keyId}/sync`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -160,7 +160,7 @@ export default function KeysManager({ token }) {
   };
 
   const handleExport = (format) => {
-    const exportUrl = `http://localhost:8000/api/keys/export/${format}`;
+    const exportUrl = `/api/keys/export/${format}`;
     const link = document.createElement('a');
     link.href = exportUrl;
     link.download = `api_monitoring_keys.${format}`;

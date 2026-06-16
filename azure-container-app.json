@@ -1,0 +1,140 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "containerAppName": {
+      "type": "string",
+      "defaultValue": "algonox-secretary-app"
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "eastus"
+    },
+    "environmentName": {
+      "type": "string",
+      "defaultValue": "algonox-secretary-env"
+    },
+    "registryName": {
+      "type": "string",
+      "defaultValue": "algonoxregistry"
+    },
+    "imageName": {
+      "type": "string",
+      "defaultValue": "algonoxregistry.azurecr.io/algonox-secretary:latest"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2023-05-01",
+      "name": "[parameters('containerAppName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "environmentId": "[resourceId('Microsoft.App/managedEnvironments', parameters('environmentName'))]",
+        "configuration": {
+          "ingress": {
+            "external": true,
+            "targetPort": 8000,
+            "allowInsecure": false,
+            "transport": "auto"
+          },
+          "registries": [
+            {
+              "server": "[concat(parameters('registryName'), '.azurecr.io')]",
+              "username": "[parameters('registryName')]",
+              "passwordSecretRef": "acr-password"
+            }
+          ],
+          "secrets": [
+            {
+              "name": "acr-password",
+              "value": "<AZURE_CONTAINER_REGISTRY_PASSWORD>"
+            },
+            {
+              "name": "mongodb-uri",
+              "value": "<YOUR_MONGODB_URI>"
+            },
+            {
+              "name": "jwt-secret-key",
+              "value": "9f8e7d6c5b4a3a2a1a0a9f8e7d6c5b4a3a2a1a0a9f8e7d6c5b4a3a2a1a0a9f8e"
+            },
+            {
+              "name": "admin-password",
+              "value": "secretary"
+            }
+          ]
+        },
+        "template": {
+          "containers": [
+            {
+              "image": "[parameters('imageName')]",
+              "name": "secretary-container",
+              "resources": {
+                "cpu": 0.5,
+                "memory": "1.0Gi"
+              },
+              "env": [
+                {
+                  "name": "PORT",
+                  "value": "8000"
+                },
+                {
+                  "name": "PYTHONUNBUFFERED",
+                  "value": "1"
+                },
+                {
+                  "name": "MONGODB_URI",
+                  "secretRef": "mongodb-uri"
+                },
+                {
+                  "name": "ADMIN_USERNAME",
+                  "value": "admin"
+                },
+                {
+                  "name": "ADMIN_PASSWORD",
+                  "secretRef": "admin-password"
+                },
+                {
+                  "name": "JWT_SECRET_KEY",
+                  "secretRef": "jwt-secret-key"
+                },
+                {
+                  "name": "MY_OAUTH_MAIL",
+                  "value": "SESSI111111@GMAIL.COM"
+                },
+                {
+                  "name": "SMTP_HOST",
+                  "value": "smtp.gmail.com"
+                },
+                {
+                  "name": "SMTP_PORT",
+                  "value": "587"
+                },
+                {
+                  "name": "SMTP_USER",
+                  "value": ""
+                },
+                {
+                  "name": "SMTP_PASS",
+                  "value": ""
+                },
+                {
+                  "name": "SMTP_FROM",
+                  "value": ""
+                },
+                {
+                  "name": "ALLOWED_ORIGINS",
+                  "value": "*"
+                }
+              ]
+            }
+          ],
+          "scale": {
+            "minReplicas": 1,
+            "maxReplicas": 1
+          }
+        }
+      }
+    }
+  ]
+}

@@ -29,7 +29,7 @@ export default function HealthManager({ token }) {
     try {
       if (activeTab === 'monitored') {
         setLoading(true);
-        const response = await fetch('http://localhost:8000/api/health', {
+        const response = await fetch('/api/health', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await response.json();
@@ -41,7 +41,7 @@ export default function HealthManager({ token }) {
         const enabledUrls = data.filter(u => u.is_enabled);
         const historyPromises = enabledUrls.map(async (u) => {
           try {
-            const hRes = await fetch(`http://localhost:8000/api/health/${u.id}/history?limit=15`, {
+            const hRes = await fetch(`/api/health/${u.id}/history?limit=15`, {
               headers: { 'Authorization': `Bearer ${token}` }
             });
             const hData = await hRes.json();
@@ -59,7 +59,7 @@ export default function HealthManager({ token }) {
         setSparklines(sparkMap);
       } else {
         setLoading(true);
-        const response = await fetch('http://localhost:8000/api/health?discovered_only=true', {
+        const response = await fetch('/api/health?discovered_only=true', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await response.json();
@@ -82,7 +82,7 @@ export default function HealthManager({ token }) {
     setFormLoading(true);
 
     try {
-      const response = await fetch('http://localhost:8000/api/health', {
+      const response = await fetch('/api/health', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -109,7 +109,7 @@ export default function HealthManager({ token }) {
 
   const handleToggleEnabled = async (urlId, currentEnabled) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/health/${urlId}`, {
+      const response = await fetch(`/api/health/${urlId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -128,7 +128,7 @@ export default function HealthManager({ token }) {
   const handleDeleteUrl = async (urlId) => {
     if (!window.confirm("Are you sure you want to remove this URL target and delete all monitoring history?")) return;
     try {
-      const response = await fetch(`http://localhost:8000/api/health/${urlId}`, {
+      const response = await fetch(`/api/health/${urlId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -143,7 +143,7 @@ export default function HealthManager({ token }) {
   const handleManualCheck = async (urlId) => {
     try {
       setCheckingId(urlId);
-      const response = await fetch(`http://localhost:8000/api/health/${urlId}/check`, {
+      const response = await fetch(`/api/health/${urlId}/check`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -159,7 +159,7 @@ export default function HealthManager({ token }) {
 
   const handleActivateDiscovered = async (disTarget) => {
     try {
-      const response = await fetch('http://localhost:8000/api/health', {
+      const response = await fetch('/api/health', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -186,7 +186,7 @@ export default function HealthManager({ token }) {
     setTriggeringAll(true);
     setTriggerResults(null);
     try {
-      const response = await fetch('http://localhost:8000/api/health/render/trigger', {
+      const response = await fetch('/api/health/render/trigger', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });

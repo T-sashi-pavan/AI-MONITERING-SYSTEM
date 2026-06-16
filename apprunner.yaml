@@ -1,0 +1,32 @@
+# ==============================================================
+# AWS App Runner Configuration Template
+# This file can be used if you configure AWS App Runner to deploy 
+# directly from your GitHub repository (using Code-based build).
+# For production deployments with Playwright/Chromium dependencies,
+# Container-based deployment is highly recommended (using Dockerfile).
+# ==============================================================
+version: 1.0
+
+runtime: python-3
+
+build:
+  commands:
+    # 1. Compile React production frontend assets
+    - cd frontend && npm install && npm run build && cd ..
+    # 2. Install backend python requirements
+    - cd backend && pip install -r requirements.txt
+    # 3. Download Chromium browser binaries and system OS dependencies for scraping
+    - playwright install --with-deps chromium
+
+run:
+  # Launch the FastAPI app with Uvicorn
+  command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+  network:
+    port: 8000
+
+# Environment variables to pass to the running container
+env:
+  - name: PORT
+    value: "8000"
+  - name: PYTHONUNBUFFERED
+    value: "1"

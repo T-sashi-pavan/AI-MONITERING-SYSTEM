@@ -31,11 +31,11 @@ export default function Dashboard({ token }) {
       const headers = { 'Authorization': `Bearer ${token}` };
       
       const [statsRes, alertsRes, activityRes, servicesRes, keysRes] = await Promise.all([
-        fetch('http://localhost:8000/api/analytics/summary', { headers }),
-        fetch('http://localhost:8000/api/analytics/alerts?unresolved_only=true', { headers }),
-        fetch('http://localhost:8000/api/analytics/activity?limit=10', { headers }),
-        fetch('http://localhost:8000/api/health', { headers }),
-        fetch('http://localhost:8000/api/keys', { headers })
+        fetch('/api/analytics/summary', { headers }),
+        fetch('/api/analytics/alerts?unresolved_only=true', { headers }),
+        fetch('/api/analytics/activity?limit=10', { headers }),
+        fetch('/api/health', { headers }),
+        fetch('/api/keys', { headers })
       ]);
 
       const statsData = await statsRes.json();
@@ -64,7 +64,7 @@ export default function Dashboard({ token }) {
 
   const handleResolveAlert = async (alertId) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/analytics/alerts/${alertId}/resolve`, {
+      const response = await fetch(`/api/analytics/alerts/${alertId}/resolve`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });

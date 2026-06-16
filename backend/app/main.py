@@ -9,6 +9,17 @@ if sys.platform == 'win32':
     asyncio.WindowsSelectorEventLoopPolicy = asyncio.WindowsProactorEventLoopPolicy
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
+# Fix passlib/bcrypt incompatibility issue where passlib reads __about__.__version__ which bcrypt 4.0.0+ does not have.
+try:
+    import bcrypt
+    if not hasattr(bcrypt, "__about__"):
+        class BcryptAbout:
+            pass
+        bcrypt.__about__ = BcryptAbout()
+        bcrypt.__about__.__version__ = getattr(bcrypt, "__version__", "4.0.0")
+except ImportError:
+    pass
+
 
 
 from contextlib import asynccontextmanager
@@ -96,10 +107,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Enable wide CORS policy for premium React frontend interaction
+# Enable CORS policy based on settings (configurable for AWS production deployments)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"],
+    allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

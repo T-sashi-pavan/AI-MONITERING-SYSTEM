@@ -1,6 +1,7 @@
 import os
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
 from cryptography.fernet import Fernet
 
 class Settings(BaseSettings):
@@ -11,6 +12,22 @@ class Settings(BaseSettings):
     )
 
     MONGODB_URI: str
+    ALLOWED_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
+
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def parse_allowed_origins(cls, v):
+        if isinstance(v, str):
+            import json
+            v = v.strip()
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    return json.loads(v)
+                except Exception:
+                    pass
+            return [x.strip() for x in v.split(",") if x.strip()]
+        return v
+
     MY_OAUTH_MAIL: str = "SESSI111111@GMAIL.COM"
     
     ADMIN_USERNAME: str = "admin"
@@ -71,12 +88,10 @@ class Settings(BaseSettings):
             "domain": "elevenlabs.io",
             "monitoring_pages": [
                 "https://elevenlabs.io/app/developers/api-keys",
-                "https://elevenlabs.io/app/developers/analytics/api-requests",
                 "https://elevenlabs.io/app/subscription/creative"
             ],
             "selectors": {
-                "keys_table": "tr, [role='row']",
-                "characters": r"([0-9,]+)\s*/\s*([0-9,]+)\s*characters"
+                "keys_table": "tr, [role='row']"
             }
         },
         "gemini": {

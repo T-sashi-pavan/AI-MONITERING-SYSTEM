@@ -175,3 +175,89 @@ async def send_session_expired_email(service_name: str, error_message: str):
     </html>
     """
     await send_email(subject, html)
+
+
+async def send_elevenlabs_overusage_email(used_credits: int, total_credits: int, overused_credits: int):
+    """Dispatches a styled HTML alert when ElevenLabs credits usage exceeds plan limit."""
+    subject = "⚠️ ElevenLabs Credit Usage Exceeded Plan Limit!"
+    
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #F3F4F6; margin: 0; padding: 20px; }}
+            .container {{ max-width: 600px; background: #ffffff; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); overflow: hidden; }}
+            .header {{ background-color: #EF4444; color: white; padding: 24px; text-align: center; }}
+            .content {{ padding: 30px; color: #374151; line-height: 1.6; }}
+            .btn {{ display: inline-block; padding: 12px 24px; margin-top: 20px; color: white !important; background-color: #4F46E5; text-decoration: none; border-radius: 8px; font-weight: bold; }}
+            .footer {{ background-color: #F9FAFB; padding: 20px; text-align: center; font-size: 12px; color: #9CA3AF; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h2 style="margin: 0;">ElevenLabs Overusage Alert</h2>
+            </div>
+            <div class="content">
+                <p>Hello Admin,</p>
+                <p>ElevenLabs usage exceeded monthly allocation by {overused_credits:,} credits. Additional billing may apply.</p>
+                <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+                    <tr style="border-bottom: 1px solid #E5E7EB;"><td style="padding: 10px 0; font-weight: bold; width: 150px;">Total Limit</td><td style="padding: 10px 0;">{total_credits:,} credits</td></tr>
+                    <tr style="border-bottom: 1px solid #E5E7EB;"><td style="padding: 10px 0; font-weight: bold;">Used Credits</td><td style="padding: 10px 0;">{used_credits:,} credits</td></tr>
+                    <tr style="border-bottom: 1px solid #E5E7EB;"><td style="padding: 10px 0; font-weight: bold;">Overused Credits</td><td style="padding: 10px 0; color: #EF4444; font-weight: bold;">{overused_credits:,} credits</td></tr>
+                </table>
+                <center>
+                    <a href="http://localhost:5173/" class="btn">View Admin Dashboard</a>
+                </center>
+            </div>
+            <div class="footer">
+                API Key Monitoring & Service Health Dashboard &bull; Automated Notifications
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    await send_email(subject, html)
+
+
+async def check_elevenlabs_overusage_alert(used_credits: int, total_credits: int):
+    """
+    Checks if credit usage exceeds limits for ElevenLabs, and creates/resolves database alerts.
+    Dispatches overusage alert emails to the admin safely, preventing duplicate logs.
+    """
+    from app.db import db
+    import asyncio
+    
+    overused = max(used_credits - total_credits, 0)
+    if overused > 0:
+        # Check if an unresolved alert already exists
+        existing_alert = await db.alerts.find_one({
+            "service_name": "ElevenLabs",
+            "type": "elevenlabs_overusage",
+            "is_resolved": False
+        })
+        
+        if not existing_alert:
+            alert_msg = f"ElevenLabs usage exceeded monthly allocation by {overused:,} credits. Additional billing may apply."
+            await db.alerts.insert_one({
+                "type": "elevenlabs_overusage",
+                "service_name": "ElevenLabs",
+                "message": alert_msg,
+                "severity": "critical",
+                "is_resolved": False,
+                "created_at": datetime.utcnow()
+            })
+            
+            # Send notification email
+            try:
+                await send_elevenlabs_overusage_email(used_credits, total_credits, overused)
+            except Exception as e:
+                logger.error(f"Failed to deliver ElevenLabs overusage notification email: {e}")
+    else:
+        # If credits are within plan, resolve any open alerts
+        await db.alerts.update_many(
+            {"service_name": "ElevenLabs", "type": "elevenlabs_overusage", "is_resolved": False},
+            {"$set": {"is_resolved": True, "resolved_at": datetime.utcnow()}}
+        )
+
