@@ -228,7 +228,7 @@ export default function HealthManager({ token }) {
       <svg width={width} height={height} className="overflow-visible">
         <polyline
           fill="none"
-          stroke="#06B6D4"
+          stroke="#9D4EDD"
           strokeWidth="1.5"
           points={points}
           className="transition-all duration-300"
@@ -261,7 +261,7 @@ export default function HealthManager({ token }) {
               disabled={triggeringAll || renderUrls.filter(u => u.is_enabled).length === 0}
               className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-brand-indigo to-brand-purple hover:from-brand-indigo/90 hover:to-brand-purple/90 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-lg hover:shadow-brand-indigo/10 transition-all group"
             >
-              {triggeringAll ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} className="group-hover:scale-110 transition-all text-amber-400" />}
+              {triggeringAll ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} className="group-hover:scale-110 transition-all text-brand-gold" />}
               <span>Trigger Keep-Warm Now</span>
             </button>
             <button
@@ -278,7 +278,7 @@ export default function HealthManager({ token }) {
       {/* RENDER INFORMATIVE ALERT BANNER */}
       <div className="mb-8 p-4 bg-brand-indigo/5 border border-brand-indigo/25 text-slate-300 text-xs rounded-2xl flex items-start gap-4 shadow-sm relative overflow-hidden">
         <div className="absolute top-0 right-0 w-24 h-24 bg-brand-indigo/5 rounded-full blur-[30px]" />
-        <Zap size={22} className="shrink-0 mt-0.5 text-amber-400 animate-pulse" />
+        <Zap size={22} className="shrink-0 mt-0.5 text-brand-gold animate-pulse" />
         <div className="space-y-1">
           <strong className="font-bold text-white text-sm block">How the Keep-Warm Trigger System works:</strong>
           <p className="leading-relaxed text-slate-400">
@@ -417,7 +417,7 @@ export default function HealthManager({ token }) {
                   {/* Latency Sparkline SVG and Sync timestamp footer */}
                   <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-800/60 text-[10px] text-slate-500 font-semibold">
                     <span className="flex items-center gap-1 font-mono">
-                      <Zap size={10} className="text-amber-400" />
+                      <Zap size={10} className="text-brand-gold" />
                       <span>Last: {u.last_check_time ? new Date(u.last_check_time).toLocaleTimeString() : 'N/A'}</span>
                     </span>
                     

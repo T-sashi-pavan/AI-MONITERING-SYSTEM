@@ -206,10 +206,10 @@ export default function KeysManager({ token }) {
         {
           label: 'API Used Quota ($)',
           data: logs.map(l => l.used),
-          borderColor: '#F59E0B',
-          backgroundColor: 'rgba(245, 158, 11, 0.08)',
+          borderColor: '#9D4EDD',
+          backgroundColor: 'rgba(157, 78, 221, 0.08)',
           borderWidth: 2,
-          pointBackgroundColor: '#FBBF24',
+          pointBackgroundColor: '#A855F7',
           tension: 0.3,
           fill: true,
         }
@@ -602,7 +602,7 @@ export default function KeysManager({ token }) {
                 <button
                   type="submit"
                   disabled={formLoading}
-                  className="px-5 py-2 bg-gradient-to-r from-brand-gold to-brand-amber hover:from-brand-gold/90 hover:to-brand-amber/90 text-[#07080B] rounded-lg text-xs font-extrabold flex items-center gap-1.5 shadow-lg transition-all cursor-pointer"
+                  className="px-5 py-2 bg-gradient-to-r from-brand-gold to-brand-amber hover:from-brand-gold/90 hover:to-brand-amber/90 text-white rounded-lg text-xs font-extrabold flex items-center gap-1.5 shadow-lg transition-all cursor-pointer"
                 >
                   {formLoading && <Loader2 size={12} className="animate-spin" />}
                   <span>Save Key</span>

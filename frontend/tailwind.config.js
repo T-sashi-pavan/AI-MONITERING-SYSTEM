@@ -17,14 +17,22 @@ export default {
           600: '#37394D',
         },
         brand: {
-          cyan: '#F59E0B', // Re-map cyan to brand-amber for global accents
-          indigo: '#FBBF24', // Re-map indigo to brand-gold
-          purple: '#FEF08A', // Re-map purple to brand-cream
+          deepPurple: '#7B2CBF',
+          mediumPurple: '#9D4EDD',
+          lightPurple: '#C77DFF',
+          accentPurple: '#A855F7',
+          darkAccent: '#5A189A',
+          
+          // Re-mapped names for backward compatibility with class usages
+          cyan: '#7B2CBF',
+          indigo: '#9D4EDD',
+          purple: '#C77DFF',
+          gold: '#A855F7',
+          amber: '#5A189A',
+          cream: '#F3E8FF',
+          
           emerald: '#10B981',
           rose: '#F43F5E',
-          gold: '#FBBF24',
-          amber: '#F59E0B',
-          cream: '#FEF08A',
         }
       },
       fontFamily: {
@@ -32,7 +40,7 @@ export default {
       },
       boxShadow: {
         'glass': '0 8px 32px 0 rgba(0, 0, 0, 0.5)',
-        'glass-hover': '0 8px 32px 0 rgba(245, 158, 11, 0.12)',
+        'glass-hover': '0 8px 32px 0 rgba(157, 78, 221, 0.12)',
       },
       backdropBlur: {
         'xs': '2px',

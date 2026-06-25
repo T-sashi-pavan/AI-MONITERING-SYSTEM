@@ -60,6 +60,12 @@ async def list_sessions(admin: dict = Depends(get_current_admin)):
     logger.info("[SYNC] Dashboard Refreshed")
     
     for svc in services:
+        try:
+            from app.auth_utils import validate_account_ownership
+            await validate_account_ownership(svc)
+        except Exception as e:
+            logger.error(f"Error validating account ownership for {svc}: {e}")
+
         doc = await db.oauth_sessions.find_one({"service": svc})
         if doc:
             current_status = await get_session_status_db(svc)
@@ -125,6 +131,41 @@ async def start_headed_login(
     if service not in SUPPORTED_SERVICES:
         raise HTTPException(status_code=400, detail=f"Unsupported service. Choose from {SUPPORTED_SERVICES}.")
 
+    from app.config import settings
+    has_credentials = False
+    if service in ["groq", "elevenlabs"]:
+        has_credentials = bool(settings.GOOGLE_EMAIL and settings.GOOGLE_PASSWORD)
+    elif service == "render":
+        has_credentials = bool(settings.GITHUB_EMAIL and settings.GITHUB_PASSWORD)
+
+    if has_credentials:
+        # Launch automated capture directly
+        await db.oauth_sessions.update_one(
+            {"service": service},
+            {
+                "$set": {
+                    "status": "authenticating",
+                    "error_message": None
+                },
+                "$unset": {
+                    "storage_state": ""
+                }
+            },
+            upsert=True
+        )
+
+        async def run_auto_scrape_task():
+            if service == "groq":
+                await scrape_groq_account()
+            elif service == "render":
+                await scrape_render_account()
+            elif service == "elevenlabs":
+                await scrape_elevenlabs_account()
+
+        background_tasks.add_task(run_auto_scrape_task)
+        await log_audit_action("start_interactive_login", f"Launched automated login and scraping using credentials for {service}")
+        return {"message": f"Automated login and scraping sync started for {service} using given credentials."}
+
     # Launch headed capture as a background task so it doesn't block the HTTP thread
     # We update the session status to 'authenticating' first
     await db.oauth_sessions.update_one(
@@ -133,6 +174,9 @@ async def start_headed_login(
             "$set": {
                 "status": "authenticating",
                 "error_message": None
+            },
+            "$unset": {
+                "storage_state": ""
             }
         },
         upsert=True
@@ -174,19 +218,27 @@ async def trigger_scrape(
 
     logger.info("[SYNC] Browser Sync Requested")
 
-    session = await db.oauth_sessions.find_one({"service": service})
-    if not session or not session.get("storage_state"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"No authenticated session state found for {service}. Please complete login first."
-        )
+    from app.config import settings
+    has_credentials = False
+    if service in ["groq", "elevenlabs"]:
+        has_credentials = bool(settings.GOOGLE_EMAIL and settings.GOOGLE_PASSWORD)
+    elif service == "render":
+        has_credentials = bool(settings.GITHUB_EMAIL and settings.GITHUB_PASSWORD)
 
-    current_status = await get_session_status_db(service)
-    if current_status == "EXPIRED":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Session expired. Reconnect browser."
-        )
+    if not has_credentials:
+        session = await db.oauth_sessions.find_one({"service": service})
+        if not session or not session.get("storage_state"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"No authenticated session state found for {service}. Please complete login first."
+            )
+
+        current_status = await get_session_status_db(service)
+        if current_status == "EXPIRED":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Session expired. Reconnect browser."
+            )
 
     # Scrape function map
     async def run_scrape_task():

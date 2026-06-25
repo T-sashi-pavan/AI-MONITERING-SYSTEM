@@ -838,7 +838,7 @@ export default function SessionsManager({ token, platform }) {
   const syncBtn = getSyncButtonState();
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-[#080B11] p-8 transition-colors duration-300">
+    <div className="w-full bg-slate-50 dark:bg-[#080B11] p-4 sm:p-6 lg:p-8 transition-colors duration-300">
       {/* Toast Notification Banner */}
       {toastMessage && (
         <div className={`mb-6 p-4 rounded-xl border flex justify-between items-center animate-bounce shadow-md ${
@@ -865,7 +865,7 @@ export default function SessionsManager({ token, platform }) {
 
       {/* Title */}
       <div className="mb-8">
-        <h2 className="text-3xl font-bold tracking-tight text-slate-800 dark:text-white font-sans">
+        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-800 dark:text-white font-sans">
           {activeTab === 'openai' ? 'OpenAI' : activeTab === 'render' ? 'Render' : activeTab === 'elevenlabs' ? 'ElevenLabs' : activeTab === 'twilio' ? 'Twilio' : activeTab === 'convex' ? 'Convex' : 'Groq'} — Platform Monitor
         </h2>
         <p className="text-slate-500 dark:text-slate-400 text-sm mt-1.5 leading-relaxed">
@@ -911,10 +911,10 @@ export default function SessionsManager({ token, platform }) {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 items-start">
         {/* Scraper Core Card Panel */}
         <div className="xl:col-span-2 space-y-6">
-          <div className="glass-panel bg-white/80 dark:bg-dark-900/60 p-8 rounded-2xl border border-slate-200 dark:border-slate-800/80 relative overflow-hidden shadow-sm">
+          <div className="glass-panel bg-white/80 dark:bg-dark-900/60 p-5 sm:p-8 rounded-2xl border border-slate-200 dark:border-slate-800/80 relative overflow-hidden shadow-sm">
             <div className="absolute top-0 right-0 w-48 h-48 bg-brand-indigo/5 rounded-full blur-[60px]" />
 
-            <div className="flex justify-between items-start mb-6">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-6">
               <div>
                 <span className="text-[10px] font-bold text-slate-400 dark:text-slate-550 uppercase tracking-wider font-sans">
                   {activeTab === 'openai' ? 'Official API Sync Console' : 'Bot Controller Console'}
@@ -992,7 +992,7 @@ export default function SessionsManager({ token, platform }) {
 
             {/* Active Sync Progression Loader */}
             {activeSessionData.status === 'authenticating' && (
-              <div className="mb-8 p-5 bg-[#0E1524]/60 border border-brand-cyan/20 rounded-2xl flex items-center justify-between animate-pulse">
+              <div className="mb-8 p-5 bg-[#0E1524]/60 border border-brand-cyan/20 rounded-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 animate-pulse">
                 <div className="flex items-center gap-3">
                   <Loader2 size={18} className="text-brand-cyan animate-spin shrink-0" />
                   <div>
@@ -1005,7 +1005,7 @@ export default function SessionsManager({ token, platform }) {
             )}
 
             {/* Stats Meta Row (IST timestamps) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mb-8">
               <div className="bg-slate-50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex items-center gap-4">
                 <Clock size={20} className="text-slate-400 dark:text-slate-500" />
                 <div>
@@ -1032,7 +1032,7 @@ export default function SessionsManager({ token, platform }) {
             </div>
 
             {/* Interactive Bot Scraper Terminal Console */}
-            <div className="mb-8 bg-slate-900 border border-slate-800 rounded-xl p-4 font-mono overflow-hidden shadow-2xl relative flex flex-col h-[200px]">
+            <div className="mb-8 bg-slate-900 border border-slate-800 rounded-xl p-3 sm:p-4 font-mono overflow-hidden shadow-2xl relative flex flex-col h-[200px]">
               <div className="absolute top-2 right-4 flex gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-brand-rose/40" />
                 <span className="w-2 h-2 rounded-full bg-amber-500/40" />
@@ -1069,15 +1069,15 @@ export default function SessionsManager({ token, platform }) {
             </div>
 
             {/* Action Trigger Buttons — context-aware per platform */}
-            <div className="flex flex-wrap items-center justify-between gap-4 pt-6 border-t border-slate-200 dark:border-slate-800/80 w-full font-sans">
-              <div className="flex flex-wrap items-center gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-6 border-t border-slate-200 dark:border-slate-800/80 w-full font-sans">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full sm:w-auto">
                 {/* Unified Sync Telemetry Button */}
                 <button
                   type="button"
                   onClick={handleSyncTelemetry}
                   disabled={syncBtn.disabled || !!syncingKeyId || activeSessionData.status === 'authenticating'}
                   title={syncBtn.tooltip || ""}
-                  className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-brand-emerald to-teal-500 hover:from-brand-emerald/90 hover:to-teal-600 disabled:opacity-50 text-white rounded-xl text-xs font-extrabold transition-all shadow-lg hover:shadow-brand-emerald/15 group cursor-pointer"
+                  className="flex items-center justify-center gap-2 px-5 py-3 min-h-[44px] w-full sm:w-auto bg-gradient-to-r from-brand-emerald to-teal-500 hover:from-brand-emerald/90 hover:to-teal-600 disabled:opacity-50 text-white rounded-xl text-xs font-extrabold transition-all shadow-lg hover:shadow-brand-emerald/15 group cursor-pointer"
                 >
                   {syncingKeyId ? <Loader2 size={14} className="animate-spin" /> : syncBtn.icon}
                   <div>
@@ -1093,7 +1093,7 @@ export default function SessionsManager({ token, platform }) {
                   <button
                     type="button"
                     onClick={() => handleInteractiveLogin(activeTab)}
-                    className="text-xs text-slate-500 hover:text-slate-850 dark:text-slate-400 dark:hover:text-white font-semibold underline underline-offset-4 decoration-slate-300 dark:decoration-slate-700 transition-colors cursor-pointer"
+                    className="text-xs text-slate-500 hover:text-slate-850 dark:text-slate-400 dark:hover:text-white font-semibold underline underline-offset-4 decoration-slate-300 dark:decoration-slate-700 transition-colors cursor-pointer text-center sm:text-left py-2 sm:py-0"
                   >
                     Reconnect Browser Session
                   </button>
@@ -1104,7 +1104,7 @@ export default function SessionsManager({ token, platform }) {
                   <button
                     type="button"
                     onClick={() => handleStopExecution(activeTab)}
-                    className="flex items-center gap-2 px-5 py-3 bg-brand-rose/10 hover:bg-brand-rose/20 text-brand-rose border border-brand-rose/30 hover:border-brand-rose/50 rounded-xl text-xs font-bold transition-all shadow group cursor-pointer"
+                    className="flex items-center justify-center gap-2 px-5 py-3 min-h-[44px] w-full sm:w-auto bg-brand-rose/10 hover:bg-brand-rose/20 text-brand-rose border border-brand-rose/30 hover:border-brand-rose/50 rounded-xl text-xs font-bold transition-all shadow group cursor-pointer"
                   >
                     <X size={14} className="text-brand-rose" />
                     <div>
@@ -1116,7 +1116,7 @@ export default function SessionsManager({ token, platform }) {
               </div>
 
               {/* Automate Mail Trigger Toggle Switch */}
-              <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/80 rounded-xl select-none shadow-sm shrink-0">
+              <div className="flex items-center justify-between sm:justify-start gap-3 px-4 py-2.5 w-full sm:w-auto bg-slate-50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/80 rounded-xl select-none shadow-sm shrink-0">
                 <div className="flex items-center gap-2">
                   <ShieldAlert size={14} className="text-brand-cyan shrink-0" />
                   <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider font-sans">Automate Mail Trigger</span>
@@ -1141,7 +1141,7 @@ export default function SessionsManager({ token, platform }) {
 
 
         {/* History logs panel */}
-        <div className="glass-panel bg-white/80 dark:bg-dark-900/60 p-6 rounded-2xl border border-slate-200 dark:border-slate-800/80 flex flex-col h-[525px] shadow-sm">
+        <div className="glass-panel bg-white/80 dark:bg-dark-900/60 p-6 rounded-2xl border border-slate-200 dark:border-slate-800/80 flex flex-col h-[400px] sm:h-[525px] shadow-sm">
           <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-200 dark:border-slate-800/80">
             <h3 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
               <Terminal size={16} className="text-brand-cyan" />
@@ -1234,7 +1234,7 @@ export default function SessionsManager({ token, platform }) {
       {/* Selected Log Analysis Details Section */}
       {selectedLog ? (
         selectedLog.status === 'success' && selectedLog.extracted_data ? (
-          <div className="glass-panel bg-white/90 dark:bg-dark-900/60 p-8 rounded-2xl border border-slate-200 dark:border-slate-800/80 mt-8 relative overflow-hidden shadow-sm animate-fade-in">
+          <div className="glass-panel bg-white/90 dark:bg-dark-900/60 p-5 sm:p-8 rounded-2xl border border-slate-200 dark:border-slate-800/80 mt-8 relative overflow-hidden shadow-sm animate-fade-in">
             <div className="absolute top-0 right-0 w-64 h-64 bg-brand-purple/5 rounded-full blur-[80px] pointer-events-none" />
             
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 pb-4 border-b border-slate-200 dark:border-slate-800/80">
@@ -1246,7 +1246,7 @@ export default function SessionsManager({ token, platform }) {
                 </h3>
               </div>
               
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
                 <select
                   value={dateFilter}
                   onChange={(e) => setDateFilter(e.target.value)}
@@ -1339,7 +1339,7 @@ export default function SessionsManager({ token, platform }) {
                 </div>
               </div>
             ) : activeTab === 'render' ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-8 animate-fade-in font-sans">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-6 mb-8 animate-fade-in font-sans">
                 <div className="bg-slate-50/50 dark:bg-[#0E1524]/60 border border-slate-200 dark:border-slate-800/60 rounded-xl p-5 shadow-sm hover:scale-[1.02] transition-transform">
                   <span className="text-[10px] font-bold text-slate-450 dark:text-slate-500 uppercase tracking-wider block font-sans">Current Plan</span>
                   <p className="text-2xl font-extrabold text-brand-indigo mt-1.5 font-sans truncate">
@@ -1454,9 +1454,9 @@ export default function SessionsManager({ token, platform }) {
                 </span>
                 
                 
-                <div className="border border-slate-200 dark:border-dark-850 bg-slate-50/20 dark:bg-dark-900/40 rounded-xl overflow-hidden shadow-inner font-sans">
+                <div className="w-full overflow-x-auto border border-slate-200 dark:border-dark-850 bg-slate-50/20 dark:bg-dark-900/40 rounded-xl shadow-inner font-sans">
                   {activeTab !== 'render' ? (
-                    <table className="w-full border-collapse text-left font-mono text-xs">
+                    <table className="w-full border-collapse text-left font-mono text-xs" style={{ minWidth: activeTab === 'elevenlabs' ? '500px' : '750px' }}>
                       <thead>
                         <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/50 dark:bg-[#0E1524]/80 text-[10px] font-bold text-slate-450 dark:text-slate-400 uppercase tracking-wider">
                           {activeTab === 'elevenlabs' ? (
@@ -1531,7 +1531,7 @@ export default function SessionsManager({ token, platform }) {
                       </tbody>
                     </table>
                   ) : (
-                    <table className="w-full border-collapse text-left font-mono text-xs">
+                    <table className="w-full border-collapse text-left font-mono text-xs" style={{ minWidth: '750px' }}>
                       <thead>
                         <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/50 dark:bg-[#0E1524]/80 text-[10px] font-bold text-slate-450 dark:text-slate-400 uppercase tracking-wider">
                           <th className="p-4">Service Name</th>
@@ -1694,8 +1694,8 @@ export default function SessionsManager({ token, platform }) {
                     </div>
                   )}
 
-                  <div className="border border-slate-200 dark:border-dark-850 bg-slate-50/20 dark:bg-dark-900/40 rounded-xl overflow-hidden shadow-inner">
-                    <table className="w-full border-collapse text-left font-mono text-xs">
+                  <div className="w-full overflow-x-auto border border-slate-200 dark:border-dark-850 bg-slate-50/20 dark:bg-dark-900/40 rounded-xl shadow-inner">
+                    <table className="w-full border-collapse text-left font-mono text-xs" style={{ minWidth: '350px' }}>
                       <thead>
                         <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/50 dark:bg-[#0E1524]/80 text-[10px] font-bold text-slate-450 dark:text-slate-400 uppercase tracking-wider">
                           <th className="p-3">Month</th>
@@ -1778,7 +1778,7 @@ export default function SessionsManager({ token, platform }) {
       {/* Manual JSON Modal */}
       {showManualModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-dark-900/80 backdrop-blur-sm">
-          <div className="w-full max-w-lg glass-panel bg-white dark:bg-dark-900 p-8 rounded-2xl shadow-2xl relative border border-slate-200 dark:border-slate-800">
+          <div className="w-full max-w-lg glass-panel bg-white dark:bg-dark-900 p-5 sm:p-8 rounded-2xl shadow-2xl relative border border-slate-200 dark:border-slate-800">
             <button
               onClick={() => setShowManualModal(false)}
               className="absolute right-4 top-4 p-1.5 text-slate-400 hover:text-slate-800 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
@@ -1831,7 +1831,7 @@ export default function SessionsManager({ token, platform }) {
                 <button
                   type="submit"
                   disabled={modalLoading}
-                  className="px-5 py-2 bg-gradient-to-r from-brand-gold to-brand-amber hover:from-brand-gold/90 hover:to-brand-amber/90 text-[#07080B] rounded-lg text-xs font-extrabold flex items-center gap-1.5 shadow-lg transition-all cursor-pointer"
+                  className="px-5 py-2 bg-gradient-to-r from-brand-gold to-brand-amber hover:from-brand-gold/90 hover:to-brand-amber/90 text-white rounded-lg text-xs font-extrabold flex items-center gap-1.5 shadow-lg transition-all cursor-pointer"
                 >
                   {modalLoading && <Loader2 size={12} className="animate-spin" />}
                   <span>Save Session Cookies</span>

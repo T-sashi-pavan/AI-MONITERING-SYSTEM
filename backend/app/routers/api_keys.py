@@ -65,6 +65,13 @@ async def list_keys(
     admin: dict = Depends(get_current_admin)
 ):
     """List all official API keys with optional search and status filtering."""
+    from app.auth_utils import validate_account_ownership
+    for svc in ["groq", "elevenlabs", "render"]:
+        try:
+            await validate_account_ownership(svc)
+        except Exception as e:
+            print(f"Error checking account ownership validation for {svc}: {e}")
+
     query = {}
     if search:
         query["$or"] = [

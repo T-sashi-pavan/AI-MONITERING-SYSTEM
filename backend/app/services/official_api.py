@@ -981,6 +981,9 @@ async def sync_single_key(service_doc: dict):
 
     # Only overwrite keys_list if we actually fetched something meaningful
     if keys_list:
+        from app.auth_utils import deduplicate_keys
+        unique_keys, _ = deduplicate_keys(keys_list, service_name)
+        keys_list = unique_keys
         update_fields["scraped_keys_list"]  = keys_list
         update_fields["scraped_keys_count"] = len(keys_list)
 

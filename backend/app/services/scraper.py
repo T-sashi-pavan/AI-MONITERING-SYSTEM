@@ -15,6 +15,7 @@ logger = logging.getLogger("dashboard.scraper")
 
 active_browsers = {}
 LAUNCHED_CHANNEL_CACHE = None
+programmatic_closes = set()
 
 def format_timestamp_or_str(val) -> str:
     if not val:
@@ -1612,6 +1613,13 @@ async def _run_interactive_login_inner(service: str) -> Dict[str, Any]:
             },
             upsert=True
         )
+    finally:
+        if is_groq:
+            for nl, level in old_levels.items():
+                try:
+                    logging.getLogger(nl).setLevel(level)
+                except Exception:
+                    pass
         
     return result
 
@@ -2013,8 +2021,8 @@ async def extract_render_billing(page, service_lower: str, log_prefix: str, bann
     if await section.count() > 0:
         print("[DEBUG] Invoice History section found", flush=True)
     
-    # Extract all list items
-    rows = await page.locator('li').all()
+    # Extract all table rows
+    rows = await page.locator('table tr').all()
     print(f"[DEBUG] Invoice rows found: {len(rows)}", flush=True)
     
     invoice_history = []
@@ -2236,35 +2244,159 @@ class BaseScraper:
         except (ValueError, TypeError):
             return False
 
+    async def process_successful_scrape(self, data: dict) -> dict:
+        from app.auth_utils import deduplicate_keys
+        
+        keys_field = "api_keys" if self.service == "elevenlabs" else "keys_list"
+        unique_keys = []
+        dups_removed = 0
+        
+        if data and keys_field in data and isinstance(data[keys_field], list):
+            unique_keys, dups_removed = deduplicate_keys(data[keys_field], self.service)
+            data[keys_field] = unique_keys
+            data["api_keys_count"] = len(unique_keys)
+            if "api_key_count" in data:
+                data["api_key_count"] = len(unique_keys)
+            if "scraped_keys" in data:
+                data["scraped_keys"] = len(unique_keys)
+                
+        print("[DEDUPLICATION] Duplicate check started", flush=True)
+        print(f"[DEDUPLICATION] Removed {dups_removed} duplicate entries", flush=True)
+        print(f"[DASHBOARD] Active keys updated: {len(unique_keys)}", flush=True)
+        
+        try:
+            monitored_key = await db.api_monitoring.find_one({"service_name": {"$regex": f"^{self.service}$", "$options": "i"}})
+            if monitored_key:
+                usage_metrics = data.get("usage_metrics", {})
+                used = usage_metrics.get("total_usage_usd") or data.get("used_credits") or 0.0
+                total = usage_metrics.get("limits_usd") or data.get("total_credits") or 0.0
+                remaining = usage_metrics.get("remaining_budget_usd") or data.get("remaining_credits") or 0.0
+                
+                def clean_float(val):
+                    if isinstance(val, (int, float)):
+                        return float(val)
+                    try:
+                        return float(str(val).replace(",", "").strip())
+                    except Exception:
+                        return 0.0
+                        
+                used_val = clean_float(used)
+                total_val = clean_float(total)
+                remaining_val = clean_float(remaining)
+                
+                usage_info = {
+                    "used": used_val,
+                    "total": total_val,
+                    "remaining": remaining_val
+                }
+                
+                await db.api_monitoring.update_one(
+                    {"_id": monitored_key["_id"]},
+                    {"$set": {
+                        "status": "active",
+                        "usage_info": usage_info,
+                        "balance": remaining_val,
+                        "scraped_keys_list": unique_keys,
+                        "scraped_keys_count": len(unique_keys),
+                        "last_sync_time": datetime.utcnow(),
+                        "error_message": None
+                    }}
+                )
+        except Exception as e:
+            logger.error(f"Failed updating api_monitoring for {self.service}: {e}")
+            
+        print("[COMPLETE] Extraction finished successfully\n", flush=True)
+        return data
+
     async def run(self) -> Dict[str, Any]:
-        await update_scraper_stage(self.service, "COOKIES_LOAD", "Decrypting and loading stored browser cookie context...", clear_feed=True)
+        # Determine current credentials from env
+        expected_email = None
+        has_credentials = False
+        if self.service in ["groq", "elevenlabs"]:
+            has_credentials = bool(settings.GOOGLE_EMAIL and settings.GOOGLE_PASSWORD)
+            expected_email = settings.GOOGLE_EMAIL
+        elif self.service == "render":
+            has_credentials = bool(settings.GITHUB_EMAIL and settings.GITHUB_PASSWORD)
+            expected_email = settings.GITHUB_EMAIL
+
+        # Print env credentials logs
+        if has_credentials and expected_email:
+            print(f"[LOGIN] Using credentials from .env", flush=True)
+            print(f"[LOGIN] Account detected: {expected_email}", flush=True)
+            logger.info(f"[LOGIN] Using credentials from .env. Account detected: {expected_email}")
+            
         session = await db.oauth_sessions.find_one({"service": self.service})
-        if not session or not session.get("storage_state"):
+        
+        # Check if credentials changed
+        stored_account_id = session.get("current_account_id") if session else None
+        credentials_changed = False
+        if expected_email and stored_account_id and stored_account_id != expected_email:
+            credentials_changed = True
+            logger.info(f"[AUTH] Credential change detected! Old: {stored_account_id}, New: {expected_email}")
+            
+        # Invalidate previous session cookies if credentials changed
+        if credentials_changed:
+            await db.oauth_sessions.update_one(
+                {"service": self.service},
+                {
+                    "$unset": {"storage_state": ""},
+                    "$set": {
+                        "status": "Reconnect Required",
+                        "current_account_id": expected_email
+                    }
+                }
+            )
+            # Reload session doc to reflect the cleared storage state
+            session = await db.oauth_sessions.find_one({"service": self.service})
+            logger.info(f"[AUTH] Invalidated old storage_state and set current_account_id to {expected_email}")
+
+        # Clear previous account data and logs for this service
+        await db.api_monitoring.update_many(
+            {"service_name": self.service},
+            {"$set": {
+                "scraped_keys_list": [],
+                "scraped_keys_count": 0,
+                "usage_detail": {},
+                "subscription_info": {},
+                "models_list": []
+            }}
+        )
+        await db.scraping_logs.delete_many({"service": self.service})
+        
+        print("[CACHE] Previous account data cleared", flush=True)
+        print("[CACHE] Previous key cache removed", flush=True)
+        logger.info("[CACHE] Previous account data and keys cache cleared from database.")
+
+        await update_scraper_stage(self.service, "COOKIES_LOAD", "Decrypting and loading stored browser cookie context...", clear_feed=True)
+        storage_state_missing = not session or not session.get("storage_state")
+            
+        if storage_state_missing and not has_credentials:
             error_msg = f"Scrape failed: No storage state found. Please login interactively or paste session JSON."
             await update_scraper_stage(self.service, "FAILED", error_msg)
             return {"success": False, "reason": "verification_failed", "error": error_msg}
 
-        try:
-            state_json = decrypt_value(session["storage_state"])
-            state_data = json.loads(state_json)
-        except Exception as e:
-            error_msg = f"Failed decrypting session: {e}"
-            await update_scraper_stage(self.service, "FAILED", error_msg)
-            return {"success": False, "reason": "verification_failed", "error": error_msg}
-
+        state_data = None
         is_mock = False
-        for cookie in state_data.get("cookies", []):
-            val = str(cookie.get("value", "")).lower()
-            if "mock" in val or "dummy" in val or "test" in val:
-                is_mock = True
-                break
+        if not storage_state_missing:
+            try:
+                state_json = decrypt_value(session["storage_state"])
+                state_data = json.loads(state_json)
+                for cookie in state_data.get("cookies", []):
+                    val = str(cookie.get("value", "")).lower()
+                    if "mock" in val or "dummy" in val or "test" in val:
+                        is_mock = True
+                        break
+            except Exception as e:
+                error_msg = f"Failed decrypting session: {e}"
+                await update_scraper_stage(self.service, "FAILED", error_msg)
+                return {"success": False, "reason": "verification_failed", "error": error_msg}
 
         if is_mock:
             return await self.run_mock(state_data)
 
         # Real Playwright Scraper
         async with async_playwright() as p:
-            await update_scraper_stage(self.service, "OPENING_LOGIN_PAGE", f"Launching headless browser and navigating to {self.service}...")
+            await update_scraper_stage(self.service, "OPENING_LOGIN_PAGE", f"Launching browser and navigating to {self.service}...")
             
             global LAUNCHED_CHANNEL_CACHE
             if LAUNCHED_CHANNEL_CACHE:
@@ -2279,7 +2411,7 @@ class BaseScraper:
             for channel in channels:
                 try:
                     browser = await p.chromium.launch(
-                        headless=True,
+                        headless=settings.HEADLESS,
                         channel=channel,
                         args=[
                             "--disable-blink-features=AutomationControlled",
@@ -2311,17 +2443,50 @@ class BaseScraper:
                 return {"success": False, "reason": "verification_failed", "error": error_msg}
 
             active_browsers[self.service] = browser
-            context = await browser.new_context(
-                storage_state=state_data,
-                viewport={"width": 1920, "height": 1080},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            )
+            
+            browser_closed_by_user = False
+            
+            def on_browser_disconnect():
+                nonlocal browser_closed_by_user
+                if self.service in programmatic_closes:
+                    return
+                if not browser_closed_by_user:
+                    browser_closed_by_user = True
+                    print("[SYSTEM] Browser closed by user.", flush=True)
+                    print("[SYSTEM] Stopping execution.", flush=True)
+                    
+            browser.on("disconnected", on_browser_disconnect)
+            
+            if state_data:
+                context = await browser.new_context(
+                    storage_state=state_data,
+                    viewport={"width": 1920, "height": 1080},
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                )
+            else:
+                context = await browser.new_context(
+                    viewport={"width": 1920, "height": 1080},
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                )
+                
             await context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             page = await context.new_page()
-            
+            page.on("close", lambda p: on_browser_disconnect())
             page.on("response", self.handle_response)
             
             try:
+                # Automated OAuth login pre-check
+                if self.service in ["groq", "elevenlabs", "render"]:
+                    from app.auth_automation import check_existing_session, perform_auto_login
+                    skip_login = False
+                    if not storage_state_missing:
+                        skip_login = await check_existing_session(self.service, page)
+                        
+                    if not skip_login:
+                        login_success = await perform_auto_login(self.service, page)
+                        if not login_success:
+                            raise Exception("verification_failed: automated_login_failed")
+                            
                 data = await self.scrape_live(page)
                 
                 # Validation: If scrape returned zero/empty keys but a previous successful scrape had keys,
@@ -2387,11 +2552,26 @@ class BaseScraper:
                         }}
                     )
                 
+                # Deduplicate, print duplicate logs, update api_monitoring, and log completion
+                data = await self.process_successful_scrape(data)
+
+                # Fetch expected email for history log
+                expected_email = None
+                if self.service in ["groq", "elevenlabs"]:
+                    expected_email = settings.GOOGLE_EMAIL
+                elif self.service == "render":
+                    expected_email = settings.GITHUB_EMAIL
+
                 logger.info("[SYNC] History Record Created")
                 await db.scraping_logs.insert_one({
                     "service": self.service,
                     "status": "success",
-                    "extracted_data": data,
+                    "extracted_data": {
+                        **data,
+                        "account_identifier": expected_email or "Unknown",
+                        "total_unique_keys": data.get("api_keys_count") or 0,
+                        "extraction_status": "Success"
+                    },
                     "scraped_at": datetime.utcnow()
                 })
                 
@@ -2401,6 +2581,13 @@ class BaseScraper:
             except Exception as e:
                 error_msg = str(e)
                 logger.error(f"Error in live scrape: {error_msg}")
+                try:
+                    import os
+                    screenshot_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "scrape_failed.png")
+                    await page.screenshot(path=screenshot_path)
+                    logger.warning(f"Saved failure screenshot to {screenshot_path}")
+                except Exception as sc_err:
+                    logger.error(f"Failed to capture failure screenshot: {sc_err}")
                 
                 status_to_set = "Expired" if "verification_failed" in error_msg else "Reconnect Required"
                 
@@ -2446,12 +2633,14 @@ class BaseScraper:
             finally:
                 active_browsers.pop(self.service, None)
                 try:
+                    programmatic_closes.add(self.service)
                     await browser.close()
                 except Exception:
                     pass
 
 class GroqScraper(BaseScraper):
     async def scrape_live(self, page) -> Dict[str, Any]:
+        print("[SCRAPER] Extracting keys...", flush=True)
         await update_scraper_stage(self.service, "EXTRACTING_METRICS", "Navigating to Groq API Keys console (console.groq.com/keys)...")
         await page.goto(self.config["monitoring_pages"][0], wait_until="domcontentloaded", timeout=15000)
         await self.wait_for_robust_load(page)
@@ -2506,6 +2695,7 @@ class GroqScraper(BaseScraper):
                 pass
                 
         api_keys_count = len(keys_list)
+        print(f"[SCRAPER] {api_keys_count} keys discovered", flush=True)
         if api_keys_count == 0:
             raise Exception("element_not_found: keys_list")
             
@@ -2660,10 +2850,24 @@ class GroqScraper(BaseScraper):
             {"service": self.service},
             {"$set": {"status": "Connected", "last_successful_scrape": datetime.utcnow(), "error_message": None}}
         )
+        data = await self.process_successful_scrape(data)
+        
+        # Expected email
+        expected_email = None
+        if self.service in ["groq", "elevenlabs"]:
+            expected_email = settings.GOOGLE_EMAIL
+        elif self.service == "render":
+            expected_email = settings.GITHUB_EMAIL
+
         await db.scraping_logs.insert_one({
             "service": self.service,
             "status": "success",
-            "extracted_data": data,
+            "extracted_data": {
+                **data,
+                "account_identifier": expected_email or "Unknown",
+                "total_unique_keys": data.get("api_keys_count") or 0,
+                "extraction_status": "Success"
+            },
             "scraped_at": datetime.utcnow()
         })
         await update_scraper_stage(self.service, "COMPLETED", "Headless scrape successfully finished. Data parsed and synced.")
@@ -2952,6 +3156,7 @@ class ElevenLabsScraper(BaseScraper):
         return plan_name, total_credits, used_credits
 
     async def scrape_live(self, page) -> Dict[str, Any]:
+        print("[SCRAPER] Extracting keys...", flush=True)
         await update_scraper_stage(self.service, "EXTRACTING_METRICS", "Navigating to ElevenLabs developers/api-keys page...")
         
         plan_name = ""
@@ -3040,6 +3245,8 @@ class ElevenLabsScraper(BaseScraper):
                 raise e
             logger.error(f"ElevenLabsScraper: Error scraping developers page: {e}")
             await update_scraper_stage(self.service, "API_KEYS_FAILED", "API Keys page not accessible")
+            
+        print(f"[SCRAPER] {len(keys_list)} keys discovered", flush=True)
             
         # Page 2: Subscription Page
         try:
@@ -3136,11 +3343,27 @@ class ElevenLabsScraper(BaseScraper):
             {"service": self.service},
             {"$set": {"status": "Connected", "last_successful_scrape": datetime.utcnow(), "error_message": None}}
         )
-        await db.scraping_logs.update_one(
-            {"service": self.service, "status": "success"},
-            {"$set": {"extracted_data": data, "scraped_at": datetime.utcnow()}},
-            upsert=True
-        )
+        data = await self.process_successful_scrape(data)
+        
+        # Expected email
+        expected_email = None
+        if self.service in ["groq", "elevenlabs"]:
+            expected_email = settings.GOOGLE_EMAIL
+        elif self.service == "render":
+            expected_email = settings.GITHUB_EMAIL
+
+        await db.scraping_logs.delete_many({"service": self.service})
+        await db.scraping_logs.insert_one({
+            "service": self.service,
+            "status": "success",
+            "extracted_data": {
+                **data,
+                "account_identifier": expected_email or "Unknown",
+                "total_unique_keys": data.get("api_keys_count") or 0,
+                "extraction_status": "Success"
+            },
+            "scraped_at": datetime.utcnow()
+        })
         await update_scraper_stage(self.service, "COMPLETED", "Mock sync finished.")
         return {"success": True, "data": data}
 
@@ -3769,6 +3992,7 @@ async def stop_active_session(service: str) -> bool:
     browser = active_browsers.get(service)
     if browser:
         try:
+            programmatic_closes.add(service)
             await browser.close()
             logger.info(f"Successfully stopped active browser execution for {service}.")
         except Exception as e:

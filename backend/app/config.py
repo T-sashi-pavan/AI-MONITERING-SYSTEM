@@ -14,6 +14,13 @@ class Settings(BaseSettings):
     MONGODB_URI: str
     ALLOWED_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
 
+    # Automated OAuth Authentication Credentials
+    GOOGLE_EMAIL: Optional[str] = None
+    GOOGLE_PASSWORD: Optional[str] = None
+    GITHUB_EMAIL: Optional[str] = None
+    GITHUB_PASSWORD: Optional[str] = None
+    HEADLESS: bool = False
+
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod
     def parse_allowed_origins(cls, v):
